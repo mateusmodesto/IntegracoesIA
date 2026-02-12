@@ -1,15 +1,27 @@
 from datetime import datetime
 import subprocess
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import httpx
+from langsmith import wrappers
 import requests
 import os
 import json
 
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "config.env"))
+    
+
 class Gemini():
     def __init__(self):
-        self.client = genai.Client(api_key="AIzaSyAZ9IWdDOKKzSt8283YbPGF-iPV4esknkA")
+        self.gemini_client = genai.Client()
+        self.client = wrappers.wrap_gemini(self.gemini_client,tracing_extra={
+            "tags": ["gemini", "python"],
+            "metadata": {
+                "integration": "google-genai",
+            },
+        },)
         
         self.prompt_valida = """
             Você é um extrator de dados de documentos brasileiros a partir de PDFs e imagens (scans de documentos físicos).
@@ -19,28 +31,6 @@ class Gemini():
             2. Identificar qual é o tipo de documento.
             3. Comparar para ver se realmente bate com o tipo de documento informado no campo "tipo_documento" (ex: RG, CPF, CNH, etc).
             4. Retornar o JSON com as informações extraídas.
-
-            --------------------------------
-            DOCUMENTOS SUPORTADOS
-            --------------------------------
-
-            - RG
-            - CPF
-            - CNH
-            - Certidão de Nascimento
-            - Certidão de Casamento
-            - Carteira de Trabalho
-            - Certificado de Conclusao de Ensino Médio
-            - Historico Escolar do Ensino Médio
-            - Comprovante de Residencia
-            - Holerite
-            
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            1. Se o documento informado for RG e o documento identificado for CNH, então is_valid = true.
-            2. Se o documento informado for CPF e o documento identificado for RG OU CNH, então is_valid = true.
-            3. Se o documento informado for Histórico Escolar do Ensino Médio ou Certificado de Conclusão de Ensino Médio e o documento identificado for de algum outro tipo de documento escolar, então is_valid = false. Deve aceitar apenas do ensino médio.
 
             --------------------------------
             FORMATO GERAL DO JSON
@@ -67,8 +57,52 @@ class Gemini():
             Agora, sempre que receber um PDF ou imagem, devolva APENAS o JSON neste formato. 
 
             """
-        self.prompt_extrair = """
         
+        self.prompt_documentos = {
+            'CPF': """
+            --------------------------------
+            REGRAS DE VALIDAÇÃO
+            --------------------------------
+            1. Se o documento informado for CPF e o documento identificado for RG OU CNH, então is_valid = true.
+            """,
+            'RG': """
+            --------------------------------
+            REGRAS DE VALIDAÇÃO
+            --------------------------------
+            1. Se o documento informado for RG e o documento identificado for CNH, então is_valid = true.            
+            """,
+            'HISTORICO_ESCOLAR': """
+            --------------------------------
+            REGRAS DE VALIDAÇÃO
+            --------------------------------
+            1. Se o documento informado for Histórico Escolar do Ensino Médio ou Certificado de Conclusão de Ensino Médio e o documento identificado for de algum outro tipo de documento escolar, então is_valid = false. Deve aceitar apenas do ensino médio. 
+            """,
+            'DECLARACAO_AUXILIO_FINANCEIRO': """
+            --------------------------------
+            REGRAS DE VALIDAÇÃO
+            --------------------------------
+            1. Se o documento informado for Declaração de Auxílio Financeiro, o documento só deverá ser considerado válido se for algo explicito que a pessoa recebe ajuda financeira externa.
+            """,
+            'CTPS - Qualificacao Civil': """
+            --------------------------------
+            REGRAS DE VALIDAÇÃO
+            --------------------------------
+            """,
+            'CTPS - Pagina Em Branco': """
+            --------------------------------
+            REGRAS DE VALIDAÇÃO
+            --------------------------------
+            1. Se o documento informado for CTPS - Página em Branco, o documento só deverá ser considerado válido se for uma página de contrato de trabalho em branco da CTPS.
+            """,
+            'CTPS - Ultimo Contrato': """
+            --------------------------------
+            REGRAS DE VALIDAÇÃO
+            --------------------------------
+            1. Se o documento informado for CTPS - Último Contrato, o documento só deverá ser considerado válido se for uma página de contrato de trabalho da CTPS.
+            """
+        }
+        self.prompt_extrair = """
+
         """
 
     def analisarDocumento(self, url, tipo_doc):
@@ -99,6 +133,7 @@ class Gemini():
                 with open(url, "rb") as f:
                     doc_data = f.read()
             if tipo_prompt == 'validacao':
+                self.prompt_valida += self.prompt_documentos.get(tipo_doc, "")
                 response_validacao = self.client.models.generate_content(
                     model='gemini-2.5-flash-lite',
                     contents=[

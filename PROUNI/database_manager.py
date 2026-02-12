@@ -154,16 +154,16 @@ class DatabaseManager:
         if not resposta_IA:
             return 0
 
-        # Converte dict para JSON string se necessário
-        if isinstance(resposta_IA, dict):
-            resposta_IA = json.dumps(resposta_IA, ensure_ascii=False)
+        # Garante que resposta_IA é sempre uma string para o pyodbc
+        if not isinstance(resposta_IA, str):
+            resposta_IA = json.dumps(resposta_IA, ensure_ascii=False, default=str)
 
         query = """
             UPDATE dtb_anchieta_prod.dbo.ANC_SOLICITACAO_BOLSA_ANEXO
             SET Resposta_IA = ?
-            WHERE CAMINHO = ? AND TIPO_DOCUMENTO = ?
+            WHERE CAMINHO = ?
         """
 
-        params = (resposta_IA, url_doc, tipo_doc)
+        params = (resposta_IA, str(url_doc))
 
         return self.execute_query(query, params)
