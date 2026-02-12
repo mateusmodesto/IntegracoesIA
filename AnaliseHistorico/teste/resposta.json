@@ -1,0 +1,1068 @@
+{
+    "comparacao_disciplinas": [
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_I_METIC_040",
+                "nome": "METODOLOGIA DA INVESTIGAÇÃO CIENTÍFICA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 90,
+                "codigo": "S4-B0269",
+                "creditos": 0,
+                "nome": "ANATOMIA DO APARELHO LOCOMOTOR",
+                "nota": "10.00",
+                "periodo": "2023.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_AHUMA_080",
+                "nome": "ANATOMIA HUMANA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 100,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0431",
+                "creditos": 0,
+                "nome": "BIOLOGIA (CITOLOGIA)",
+                "nota": "7.75",
+                "periodo": "2023.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_CHEMB_080",
+                "nome": "CITOLOGIA, HISTOLOGIA E EMBRIOLOGIA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_EXESD_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 30,
+                "codigo": "S4-B0040",
+                "creditos": 0,
+                "nome": "COMUNICAÇÃO E EXPRESSÃO",
+                "nota": "10.00",
+                "periodo": "2023.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_I_LPTEX_040",
+                "nome": "LEITURA E PRODUÇÃO DE TEXTOS"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0291",
+                "creditos": 0,
+                "nome": "BIOQUÍMICA",
+                "nota": "8.50",
+                "periodo": "2023.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_BIOQU_080",
+                "nome": "BIOQUÍMICA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_FARED_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0352",
+                "creditos": 0,
+                "nome": "FISIOLOGIA GERAL",
+                "nota": "9.06",
+                "periodo": "2023.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_FPAHU_080",
+                "nome": "FISIOLOGIA E PATOLOGIA HUMANA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_EXHAS_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_FMACO_080",
+                "nome": "FARMACOLOGIA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 30,
+                "codigo": "S4-B0391",
+                "creditos": 0,
+                "nome": "PATOLOGIA",
+                "nota": "10.00",
+                "periodo": "2023.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_MECAD_080",
+                "nome": "MECANISMOS DE AGRESSÃO E DEFESA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 37,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 30,
+                "codigo": "S4-B0369",
+                "creditos": 0,
+                "nome": "FUNDAMENTOS DE SAÚDE COLETIVA",
+                "nota": "8.50",
+                "periodo": "2023.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_SCPPU_040",
+                "nome": "SAÚDE COLETIVA E POLÍTICAS PÚBLICAS"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 30,
+                "codigo": "S4-B0165",
+                "creditos": 0,
+                "nome": "HOMEMESOCIEDADE",
+                "nota": "10.00",
+                "periodo": "2024.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_I_RERSO_040",
+                "nome": "RELAÇÕES ÉTNICO-RACIAIS E RESPONSABILIDADE SOCIAL"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 90,
+                "codigo": "S4-B0269",
+                "creditos": 0,
+                "nome": "ANATOMIA DO APARELHO LOCOMOTOR",
+                "nota": "10.00",
+                "periodo": "2023.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_ATALO_080",
+                "nome": "ANATOMIA TOPOGRÁFICA E DO APARELHO LOCOMOTOR"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 100,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0431",
+                "creditos": 0,
+                "nome": "BIOLOGIA (CITOLOGIA)",
+                "nota": "7.75",
+                "periodo": "2023.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_BMGEN_080",
+                "nome": "BIOLOGIA MOLECULAR E GENÉTICA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_EXSAUM_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 30,
+                "codigo": "S4-B0364",
+                "creditos": 0,
+                "nome": "FISIOTERAPIA PREVENTIVA",
+                "nota": "10.00",
+                "periodo": "2023.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_FISCP_080",
+                "nome": "FISIOTERAPIA NA SAÚDE COLETIVA E PREVENTIVA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 37,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_DIAPI_080",
+                "nome": "DIAGNÓSTICO POR IMAGEM"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_MEAMS_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0415",
+                "creditos": 0,
+                "nome": "PSICOLOGIA APLICADA À FISIOTERAPIA",
+                "nota": "10.00",
+                "periodo": "2023.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_PSSAU_040",
+                "nome": "PSICOLOGIA DA SAÚDE"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 100,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_PICTM_080",
+                "nome": "PRÁTICAS INTEGRATIVAS, COMPLEMENTARES E TERAPIAS MANUAIS"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0304",
+                "creditos": 0,
+                "nome": "ELETROTERAPIA",
+                "nota": "8.31",
+                "periodo": "2025.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_RELTF_080",
+                "nome": "RECURSOS ELETRO, TERMO E FOTOTERAPÊUTICOS"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_EXSAID_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0348",
+                "creditos": 0,
+                "nome": "FISIOLOGIA APLICADA A ATIVIDADE MOTORA",
+                "nota": "7.60",
+                "periodo": "2024.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_FISEX_040",
+                "nome": "FISIOLOGIA DO EXERCÍCIO"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 100,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0295",
+                "creditos": 0,
+                "nome": "CINESIOTERAPIA",
+                "nota": "6.59",
+                "periodo": "2024.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_CIFAQ_080",
+                "nome": "CINESIOTERAPIA E FISIOTERAPIA AQUÁTICA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_FI_ESAPD_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_BIOEP_040",
+                "nome": "BIOESTATÍSTICA E EPIDEMIOLOGIA "
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0294",
+                "creditos": 0,
+                "nome": "CINESIOLOGIA",
+                "nota": "9.63",
+                "periodo": "2024.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_M_CIBIO_080",
+                "nome": "CINESIOLOGIA E BIOMECÂNICA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0281",
+                "creditos": 0,
+                "nome": "AVALIAÇÃO FUNCIONAL",
+                "nota": "8.50",
+                "periodo": "2024.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_AVAFI_080",
+                "nome": "AVALIAÇÃO FISIOTERAPÊUTICA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_FSTRA_080",
+                "nome": "FISIOTERAPIA NA SAÚDE DO TRABALHADOR"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 30,
+                "codigo": "S4-B0296",
+                "creditos": 0,
+                "nome": "CONTROLE MOTOR E NEUROCIÊNCIAS",
+                "nota": "9.25",
+                "periodo": "2025.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_FI_NCMOT_040",
+                "nome": "NEUROFISIOLOGIA E CONTROLE MOTOR"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_EXSTB_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_FI_FCARD_040",
+                "nome": "FISIOTERAPIA CARDIOVASCULAR"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 90,
+                "codigo": "S4-B0365",
+                "creditos": 0,
+                "nome": "FISIOTERAPIA RESPIRATÓRIA",
+                "nota": "6.63",
+                "periodo": "2025.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_FIRTI_080",
+                "nome": "FISIOTERAPIA RESPIRATÓRIA E TERAPIA INTENSIVA"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 100,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_FSMHO_080",
+                "nome": "FISIOTERAPIA NA SAÚDE DA MULHER E DO HOMEM"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_EXSUR_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_FSIDO_080",
+                "nome": "FISIOTERAPIA NA SAÚDE DO IDOSO"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 30,
+                "codigo": "S4-B0419",
+                "creditos": 0,
+                "nome": "REEDUCAÇÃO FUNCIONAL",
+                "nota": "8.00",
+                "periodo": "2024.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_RFUNC_080",
+                "nome": "REEDUCAÇÃO FUNCIONAL"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 37,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_EXSCD_040",
+                "nome": "PRÁTICA EXTENSIONISTA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_M_OPTATIVA_040",
+                "nome": "ELETIVA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_FI_FESPO_040",
+                "nome": "FISIOTERAPIA ESPORTIVA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0362",
+                "creditos": 0,
+                "nome": "FISIOTERAPIA ORTOPÉDICA FUNCIONAL",
+                "nota": "5.88",
+                "periodo": "2025.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_FIOT1_080",
+                "nome": "FISIOTERAPIA EM ORTOPEDIA E TRAUMATOLOGIA I"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0362",
+                "creditos": 0,
+                "nome": "FISIOTERAPIA ORTOPÉDICA FUNCIONAL",
+                "nota": "5.88",
+                "periodo": "2025.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_FIOT2_080",
+                "nome": "FISIOTERAPIA EM ORTOPEDIA E TRAUMATOLOGIA II"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 400,
+                "codigo": "H_FI_ESTAGI_400",
+                "nome": "ESTÁGIO SUPERVISIONADO EM FISIOTERAPIA I"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 400,
+                "codigo": "H_FI_ESTAGII_400",
+                "nome": "ESTÁGIO SUPERVISIONADO EM FISIOTERAPIA II"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0281",
+                "creditos": 0,
+                "nome": "AVALIAÇÃO FUNCIONAL",
+                "nota": "8.50",
+                "periodo": "2024.2",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_AVANE_080",
+                "nome": "AVALIAÇÃO FISIOTERAPÊUTICA NEUROFUNCIONAL"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 75,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 60,
+                "codigo": "S4-B0363",
+                "creditos": 0,
+                "nome": "FISIOTERAPIA PEDIÁTRICA",
+                "nota": "9.63",
+                "periodo": "2025.1",
+                "situacao": "APROVADO"
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_FI_FISCA_040",
+                "nome": "FISIOTERAPIA NA SAÚDE DA CRIANÇA E DO ADOLESCENTE"
+            },
+            "observacao": "Disciplina equivalente encontrada e aprovada.",
+            "porcentagem_aproveitamento": 100,
+            "possivel_dispensa": true
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_FNADU_080",
+                "nome": "FISIOTERAPIA NEUROFUNCIONAL"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 80,
+                "codigo": "H_FI_FDERM_080",
+                "nome": "FISIOTERAPIA DERMATOFUNCIONAL"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 20,
+                "codigo": "H_M_TCCUR1_020",
+                "nome": "TRABALHO DE CONCLUSÃO DE CURSO"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_FI_INPEF_040",
+                "nome": "INOVAÇÃO E PESQUISA EM FISIOTERAPIA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 20,
+                "codigo": "H_M_TCCUR2_020",
+                "nome": "TRABALHO DE CONCLUSÃO DE CURSO"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_FI_EXEPF_040",
+                "nome": "EXERCÍCIO PROFISSIONAL DA FISIOTERAPIA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 20,
+                "codigo": "H_M_TCCUR3_020",
+                "nome": "TRABALHO DE CONCLUSÃO DE CURSO"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 40,
+                "codigo": "H_FI_EMGSF_040",
+                "nome": "EMPREENDEDORISMO E GESTÃO DE SERVIÇOS DE FISIOTERAPIA"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        },
+        {
+            "disciplina_cursada_equivalente": {
+                "carga_horaria": 0,
+                "codigo": "",
+                "creditos": 0,
+                "nome": "",
+                "nota": "",
+                "periodo": "",
+                "situacao": ""
+            },
+            "nova_disciplina": {
+                "carga_horaria": 20,
+                "codigo": "H_M_TCCUR4_020",
+                "nome": "TRABALHO DE CONCLUSÃO DE CURSO"
+            },
+            "observacao": "Nenhuma disciplina equivalente encontrada no histórico.",
+            "porcentagem_aproveitamento": 0,
+            "possivel_dispensa": false
+        }
+    ]
+}
