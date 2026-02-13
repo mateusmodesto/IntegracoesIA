@@ -154,16 +154,91 @@ class DatabaseManager:
         if not resposta_IA:
             return 0
 
-        # Garante que resposta_IA é sempre uma string para o pyodbc
-        if not isinstance(resposta_IA, str):
+        # Extrai is_valid antes de serializar para string
+        if isinstance(resposta_IA, dict):
+            is_valid = 'S' if resposta_IA.get('validacao', {}).get('is_valid') else 'N'
             resposta_IA = json.dumps(resposta_IA, ensure_ascii=False, default=str)
+        else:
+            is_valid = None
 
         query = """
-            UPDATE dtb_anchieta_prod.dbo.ANC_SOLICITACAO_BOLSA_ANEXO
-            SET Resposta_IA = ?
+            INSERT INTO DTB_ANCHIETA_PROD.DBO.ANC_SOLICITACAO_BOLSA_ANEXO_VALIDA_DOC
+            SELECT CAST(ID AS INT) AS ID, ? AS RESPOSTA_API, ? AS TITULAR, ? AS VALIDO, GETDATE() AS DATA
+            FROM DTB_ANCHIETA_PROD.DBO.ANC_SOLICITACAO_BOLSA_ANEXO
             WHERE CAMINHO = ?
         """
 
-        params = (resposta_IA, str(url_doc))
+        params = (resposta_IA, None, is_valid, str(url_doc))
 
         return self.execute_query(query, params)
+    
+    def buscar_documentos_pendentes(self) -> List[Dict[str, Any]]:
+        """
+        Busca documentos pendentes para processamento
+
+        Returns:
+            Lista de documentos pendentes
+        """
+        query = """
+            SELECT B.*
+            FROM DTB_ANCHIETA_PROD.DBO.ANC_SOLICITACAO_BOLSA A
+            JOIN DTB_ANCHIETA_PROD.DBO.ANC_SOLICITACAO_BOLSA_ANEXO B
+                ON A.ID = B.ID_SOLICITACAO
+            WHERE A.nome NOT LIKE '%teste%'
+            AND A.ano = '2026'
+            AND A.TIPO_SOLICITACAO <> 'CEU'
+            AND A.JUSTIFICATIVA IS NOT NULL
+            AND A.APROVACAO IN ('2','3','4')
+            AND B.TIPO_DOCUMENTO IN (
+                    'CERT_CONCLUSAO_CURSO',
+                    'CERTIDAO_CASAMENTO',
+                    'CERTIDAO_NASC',
+                    'Carteira de Trabalho',
+                    'ATUALIZADO',
+                    'CLT',
+                    'COMPROVANTE DE RESIDENCIA',
+                    'CPF',
+                    'ctps',
+                    'DECLARAÇÃO DE AUSENCIA',
+                    'DECLARAÇÃO DE AUSENCIA DE RENDA',
+                    'DECLARAÇÃO DE CONCLUSÃO',
+                    'Declaração de Renda Informal',
+                    'DECLARACAO_AUSENCIA_RENDA',
+                    'DECLARACAO_AUTONOMO',
+                    'DECLARACAO_RENDA_AUTONOMO',
+                    'DECLARACAO_RENDA_INFORMAL',
+                    'EXTRATO_1_RENDA_AUTONOMO',
+                    'EXTRATO_1_RENDA_INFORMAL',
+                    'EXTRATO_2_RENDA_AUTONOMO',
+                    'EXTRATO_2_RENDA_INFORMAL',
+                    'EXTRATO_3_RENDA_AUTONOMO',
+                    'EXTRATO_3_RENDA_INFORMAL',
+                    'EXTRATO_COMPROBATORIO_1',
+                    'EXTRATO_COMPROBATORIO_2',
+                    'EXTRATO_COMPROBATORIO_3',
+                    'EXTRATO_RENDA_AUTONOMO_1',
+                    'EXTRATO_RENDA_AUTONOMO_2',
+                    'EXTRATO_RENDA_AUTONOMO_3',
+                    'Extratos1',
+                    'HISTORICO',
+                    'HOLERITE_1',
+                    'HOLERITE_2',
+                    'HOLERITE_3',
+                    'HOLERITE_4',
+                    'HOLERITE_5',
+                    'HOLERITE_6',
+                    'holerites',
+                    'PRO-LABORE',
+                    'OUTROS_DOCUMENTOS',
+                    'RESIDENCIA',
+                    'RG',
+                    'RG_VERSO',
+                    'PAGINA_FOTO',
+                    'PAGINA_QUALI_CIVIL',
+                    'PAGINA_ULTIMO_CONTRATO',
+                    'PAGINA_BRANCO',
+                    'PAGINA_QUALIFICACAO'
+            );
+
+        """
+        return self.fetch_all(query)

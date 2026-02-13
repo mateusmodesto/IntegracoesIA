@@ -77,11 +77,11 @@ class Gemini():
             --------------------------------
             1. Se o documento informado for Histórico Escolar do Ensino Médio ou Certificado de Conclusão de Ensino Médio e o documento identificado for de algum outro tipo de documento escolar, então is_valid = false. Deve aceitar apenas do ensino médio. 
             """,
-            'DECLARACAO_AUXILIO_FINANCEIRO': """
+            'Declaracao de auxilio financeiro': """
             --------------------------------
             REGRAS DE VALIDAÇÃO
             --------------------------------
-            1. Se o documento informado for Declaração de Auxílio Financeiro, o documento só deverá ser considerado válido se for algo explicito que a pessoa recebe ajuda financeira externa.
+            1. Se o documento informado for "Declaração de Auxílio Financeiro", considere válido (is_valid=true) qualquer documento que traga evidência explícita de recebimento de auxílio/benefício/renda externa (ex.: Bolsa Família/Auxílio Brasil, INSS/aposentadoria/pensão/BPC, seguro-desemprego/seguro, pensão alimentícia ou crédito bancário identificado como benefício). Se não houver essa evidência explícita, is_valid=false.
             """,
             'CTPS - Qualificacao Civil': """
             --------------------------------
@@ -99,6 +99,18 @@ class Gemini():
             REGRAS DE VALIDAÇÃO
             --------------------------------
             1. Se o documento informado for CTPS - Último Contrato, o documento só deverá ser considerado válido se for uma página de contrato de trabalho da CTPS.
+            """,
+            'declaracao de renda': """
+            --------------------------------
+            REGRAS DE VALIDAÇÃO
+            --------------------------------
+            1. Se o documento informado for "Declaração de Renda", considere válido (is_valid=true) qualquer documento que mostre de forma explícita uma renda/entrada de dinheiro (valor e/ou periodicidade), como holerite/contracheque, extrato bancário com créditos identificados, declaração de rendimentos, comprovante de aposentadoria/pensão/benefício, recibo de pagamento ou contrato/declaração que informe valor de remuneração. Se não houver evidência explícita de renda, is_valid=false.
+            """,
+            'pro-labore': """
+            --------------------------------
+            REGRAS DE VALIDAÇÃO
+            --------------------------------
+            1. Se o documento informado for "Pró-labore", considere válido (is_valid=true) qualquer documento que indique explicitamente pagamento de pró-labore ao titular (ex.: demonstrativo/recibo de pró-labore, holerite com “pró-labore”, extrato com crédito identificado como pró-labore ou declaração/contábil da empresa informando o valor). Se não houver menção explícita a pró-labore ou pagamento equivalente ao sócio/administrador, is_valid=false.
             """
         }
         self.prompt_extrair = """
