@@ -1,16 +1,18 @@
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import json
+import uvicorn
 
-# Aplicação Flask principal
-app = Flask(__name__)
+# Aplicação FastAPI principal
+app = FastAPI()
 
-
-@app.after_request
-def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    return response
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
 
 
 def err(msg, code=400, extra=None):
@@ -38,12 +40,12 @@ def err(msg, code=400, extra=None):
                 safe_extra[k] = str(v)  # conversão defensiva
         payload.update(safe_extra)
 
-    return jsonify(payload), code
+    return JSONResponse(content=payload, status_code=code)
 
 
 
-@app.route("/validar", methods=["POST"])
-def validar():
+@app.post("/validar")
+async def validar(request: Request):
     """
     Endpoint responsável por validar documentos enviados.
 
@@ -56,8 +58,11 @@ def validar():
     import LeituraDocumentos.simple_main_flask as sp
 
     try:
-        # Lê o JSON sem lançar exceção automaticamente
-        data = request.get_json(silent=True)
+        # Lê o JSON do body
+        try:
+            data = await request.json()
+        except Exception:
+            data = None
 
         if not isinstance(data, dict):
             return err("JSON inválido ou ausente", 400)
@@ -84,17 +89,17 @@ def validar():
 
         # Retorno padronizado para o integrador
         if result['status'] == 'sucesso':
-            return jsonify({
+            return JSONResponse(content={
                 "status": "processado",
                 "resultado": result
-            }), 200
+            }, status_code=200)
 
         elif result['status'] == 'error':
-            return jsonify({
+            return JSONResponse(content={
                 "status": "nao processado",
                 "resultado": result,
                 "payload": payload
-            }), 200
+            }, status_code=200)
 
         # Caso inesperado, mas sem quebrar o fluxo
         return err("Erro ao processar documento", 200, {"detail": result})
@@ -103,8 +108,8 @@ def validar():
         # Aqui sim erro interno real (500)
         return err("Erro interno", 500, {"detail": str(e)})
 
-@app.route("/PROUNI", methods=["POST"])
-def prouni():
+@app.post("/PROUNI")
+async def prouni(request: Request):
     """
     Endpoint responsável por validar documentos enviados pelo PROUNI.
 
@@ -117,8 +122,11 @@ def prouni():
     import PROUNI.simple_main_flask as sp
 
     try:
-        # Lê o JSON sem lançar exceção automaticamente
-        data = request.get_json(silent=True)
+        # Lê o JSON do body
+        try:
+            data = await request.json()
+        except Exception:
+            data = None
 
         if not isinstance(data, dict):
             return err("JSON inválido ou ausente", 400)
@@ -143,17 +151,17 @@ def prouni():
 
         # Retorno padronizado para o integrador
         if result['status'] == 'sucesso':
-            return jsonify({
+            return JSONResponse(content={
                 "status": "processado",
                 "resultado": result
-            }), 200
+            }, status_code=200)
 
         elif result['status'] == 'error':
-            return jsonify({
+            return JSONResponse(content={
                 "status": "nao processado",
                 "resultado": result,
                 "payload": payload
-            }), 200
+            }, status_code=200)
 
         # Caso inesperado, mas sem quebrar o fluxo
         return err("Erro ao processar documento", 200, {"detail": result})
@@ -162,8 +170,8 @@ def prouni():
         # Aqui sim erro interno real (500)
         return err("Erro interno", 500, {"detail": str(e)})
 
-@app.route("/analiseHistorico", methods=["POST"])
-def analiseHistorico():
+@app.post("/analiseHistorico")
+async def analiseHistorico(request: Request):
     """
     Endpoint responsável por analisar histórico escolar.
 
@@ -178,7 +186,10 @@ def analiseHistorico():
     from AnaliseHistorico import simple_main as ah
 
     try:
-        data = request.get_json(silent=True)
+        try:
+            data = await request.json()
+        except Exception:
+            data = None
 
         if not isinstance(data, dict):
             return err("JSON inválido ou ausente", 400)
@@ -227,18 +238,18 @@ def analiseHistorico():
         # O integrador não depende do retorno,
         # apenas do efeito colateral (insert/update no banco)
         if result['status'] == 'sucesso':
-            return jsonify({
+            return JSONResponse(content={
                 "status": "processado",
                 "resultado": convert_sets(result['detalhes'])
-            }), 200
+            }, status_code=200)
 
         elif result['status'] == 'erro':
             print(f"Não processou: {result}")
-            return jsonify({
+            return JSONResponse(content={
                 "status": "nao processado",
                 "resultado": convert_sets(result['detalhes']),
                 "payload": payload
-            }), 200
+            }, status_code=200)
 
         # Caso não esperado
         print(f"Erro ao processar histórico {result}")
@@ -249,7 +260,7 @@ def analiseHistorico():
     except Exception as e:
         return err("Erro interno", 500, {"detail": str(e)})
 
-    
+
 
 def convert_sets(obj):
     """
@@ -271,5 +282,4 @@ def convert_sets(obj):
 
 if __name__ == "__main__":
     # debug=False para evitar reload duplo e execução duplicada
-    app.run(host="0.0.0.0", port=5010, debug=False)
-
+    uvicorn.run(app, host="0.0.0.0", port=5010)
