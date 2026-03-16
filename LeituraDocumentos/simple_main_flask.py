@@ -312,7 +312,8 @@ class DocumentProcessorWeb:
         elif tipo_doc == 'certificado_conclusao_ensino_medio':
             if (data.get('is_valid') is False or data.get('is_valid') is None) and data['document_type'] not in ('conclusao_historico',):
                 return False
-            if data.get('origem_entrega') == 'graduacao' and data['fields'].get('conclusao', '') != '':
+            # Para graduação, APENAS ensino_medio é aceito
+            if data.get('origem_entrega') == 'graduacao' and data['fields'].get('nivel_ensino') == 'ensino_medio' and data['fields'].get('conclusao', '') != '':
                 return bool(
                     data['fields']['conclusao'].get('instituicao_ensino')
                     and data['fields'].get('nome_pessoa')
@@ -323,7 +324,8 @@ class DocumentProcessorWeb:
         elif tipo_doc == 'certificado_diploma_graduacao':
             if (data.get('is_valid') is False or data.get('is_valid') is None) and data['document_type'] not in ('conclusao_historico',):
                 return False
-            if data.get('origem_entrega') == 'pos_graduacao' and data['fields'].get('conclusao', '') != '':
+            # Para pos_graduacao, APENAS ensino_superior é aceito
+            if data.get('origem_entrega') == 'pos_graduacao' and data['fields'].get('nivel_ensino') == 'ensino_superior' and data['fields'].get('conclusao', '') != '':
                 return bool(
                     data['fields']['conclusao'].get('instituicao_ensino')
                     and data['fields'].get('nome_pessoa')
@@ -334,20 +336,49 @@ class DocumentProcessorWeb:
         elif tipo_doc == 'historico_escolar_fundamental':
             if (data.get('is_valid') is False or data.get('is_valid') is None) and data['document_type'] not in ('conclusao_historico',):
                 return False
-            if data.get('origem_entrega') == 'escola' and data['fields'].get('conclusao', '') != '':
+            # Para escola, APENAS ensino_fundamental é aceito
+            if data.get('origem_entrega') == 'escola' and data['fields'].get('nivel_ensino') == 'ensino_fundamental':
                 return bool(
                     data['fields']['historico'].get('instituicao_ensino')
                     and data['fields'].get('nome_pessoa')
+                    and data['fields']['conclusao'].get('ano_conclusao')
                 )
             return False
 
         elif tipo_doc in ('historico_escolar', 'conclusao_historico'):
             if (data.get('is_valid') is False or data.get('is_valid') is None) and data['fields'].get('historico', '') == '' and data['document_type'] not in ('conclusao_historico',):
                 return False
-            if data.get('origem_entrega') in ('graduacao', 'pos_graduacao'):
+            
+            # Validação rigorosa do nível de ensino por origem
+            origem = data.get('origem_entrega')
+            nivel = data['fields'].get('nivel_ensino')
+            
+            if origem == 'graduacao':
+                # Para graduação, APENAS ensino_medio é aceito
+                if nivel != 'ensino_medio':
+                    return False
                 return bool(
                     data['fields']['historico'].get('instituicao_ensino')
                     and data['fields'].get('nome_pessoa')
+                    and data['fields']['conclusao'].get('ano_conclusao')
+                )
+            elif origem == 'pos_graduacao':
+                # Para pos_graduacao, APENAS ensino_superior é aceito
+                if nivel != 'ensino_superior':
+                    return False
+                return bool(
+                    data['fields']['historico'].get('instituicao_ensino')
+                    and data['fields'].get('nome_pessoa')
+                    and data['fields']['conclusao'].get('ano_conclusao')
+                )
+            elif origem == 'escola':
+                # Para escola, APENAS ensino_fundamental é aceito
+                if nivel != 'ensino_fundamental':
+                    return False
+                return bool(
+                    data['fields']['historico'].get('instituicao_ensino')
+                    and data['fields'].get('nome_pessoa')
+                    and data['fields']['conclusao'].get('ano_conclusao')
                 )
             return False
 
