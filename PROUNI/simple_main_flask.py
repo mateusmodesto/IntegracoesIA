@@ -1,115 +1,97 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Sistema Simplificado de Processamento de Documentos
-Método main que busca documentos no banco, processa via API e atualiza dados
+Processador de documentos PROUNI.
+
+Recebe payload da API, chama Gemini para validacao/extracao
+e grava resultado no banco.
 """
 
-import json
-from typing import Dict, Any, List
+from typing import Dict, Any
+
 from .LerDocumentoClass import Gemini
 from .database_manager import DatabaseManager
+from shared.config import get_logger
+
+logger = get_logger(__name__)
 
 
 class DocumentProcessorWeb:
+    """Processa um documento PROUNI: valida via IA e grava no banco."""
+
     def __init__(self, database_config: Dict[str, Any]):
-        """
-        Inicializa o processador
-        
-        Args:
-            database_config: Configurações do banco de dados
-        """
         self.db_manager = DatabaseManager(database_config)
-        self.gemi = Gemini()
-       
+        self.gemini = Gemini()
 
-
-    def process_document(self, document: Dict[str, Any]) -> Dict[str, Any]:
+    def process_document(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Processa um documento individual
-        
+        Processa um documento individual.
+
         Args:
-            document: Dados do documento
-            
+            payload: Dict com 'arquivo', 'pessoa' e 'tipo_documento'.
+
         Returns:
-            Resultado do processamento
+            Dict com status do processamento.
         """
-        # Extrai dados do documento
-        aluno = document['ALUNO']
-        url_doc = document['DOC']
-        tipo_doc = document['tipo_documento']
+        url_doc = payload["arquivo"]
+        tipo_doc = payload["tipo_documento"]
 
-        base = "https://ged-anchieta.s3.amazonaws.com/"
-
+        api_resposta = None
 
         try:
-            api_resposta = self.gemi.analisarDocumento(url=url_doc, tipo_doc=tipo_doc)
+            api_resposta = self.gemini.analisarDocumento(url=url_doc, tipo_doc=tipo_doc)
 
-            if api_resposta.get('Erro'):
+            if api_resposta.get("Erro"):
                 return {
                     "status": "error",
-                    'message': 'Erro ao se conectar com a IA',
-                    'api_resposta': api_resposta
+                    "message": "Erro ao se conectar com a IA",
+                    "api_resposta": api_resposta,
                 }
-            
-            resposta = self.db_manager.update_documento_prouni(aluno=aluno, resposta_IA=api_resposta, tipo_doc=tipo_doc, url_doc=url_doc)
 
-            return {"status": "sucesso", "banco": resposta, "api_resposta": api_resposta}
-                
-        except Exception as e:            
-            # Verifica se é um erro de timeout ou 504
-            is_timeout_error = (
-                'timeout' in str(e).lower() or 
-                '504' in str(e) or 
-                'endpoint request timed out' in str(e).lower()
+            resposta_banco = self.db_manager.update_documento_prouni(
+                dados=payload, resposta_IA=api_resposta
             )
-            
-            if is_timeout_error:
-                return {
-                    'status': 'error',
-                    'status': 'timeout',                    
-                    'retry_needed': True
-                }
-            
+
+            return {
+                "status": "sucesso",
+                "banco": resposta_banco,
+                "api_resposta": api_resposta,
+            }
+
+        except Exception as e:
+            is_timeout = (
+                "timeout" in str(e).lower()
+                or "504" in str(e)
+                or "endpoint request timed out" in str(e).lower()
+            )
+
+            if is_timeout:
+                logger.warning(f"Timeout ao processar documento: {tipo_doc}")
+                return {"status": "timeout", "retry_needed": True}
+
+            logger.error(f"Erro ao processar documento {tipo_doc}: {e}")
             return {
                 "status": "error",
-                'message': str(e),
-                'api_resposta': api_resposta,
-                'retry_needed': False
+                "message": str(e),
+                "api_resposta": api_resposta,
+                "retry_needed": False,
             }
-    
 
-    def process_pending_document(self, aluno, documento, tipo_documento):
-        doc = {'ALUNO': aluno, 'DOC': documento, "tipo_documento": tipo_documento}
-        return self.process_document(doc)
-        
-def main(payload):
+
+def main(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Função principal simplificada
+    Ponto de entrada chamado pela API.
+
+    Args:
+        payload: Dict com 'arquivo', 'pessoa' e 'tipo_documento'.
+
+    Returns:
+        Resultado do processamento.
     """
-    # Configuração do banco de dados
-    database_config = {
-        'host': '192.168.0.9',
-        'database': 'dtb_lyceum_prod',
-        'user': 'lyceum',
-        'password': 'lyceum',
-        'port': 1433
-    }
-    
-    # Inicializa o processador
-    processor = DocumentProcessorWeb(database_config)
-    
+    from shared.config import DATABASE_CONFIG
+
+    processor = DocumentProcessorWeb(DATABASE_CONFIG)
+
     try:
-        # Processa todos os documentos pendentes
-        result = processor.process_pending_document(aluno=payload['aluno'], 
-                documento=payload['arquivo'], 
-                tipo_documento=payload['tipo_documento'])
-    
-        return result
-    
+        return processor.process_document(payload)
     except Exception as e:
-        
-        return {
-            "status": "error",
-            "mensagem": str(e)
-        }
+        logger.error(f"Erro fatal no processamento PROUNI: {e}")
+        return {"status": "error", "mensagem": str(e)}

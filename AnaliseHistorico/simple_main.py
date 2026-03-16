@@ -1,249 +1,105 @@
+from typing import Any
+
+from shared.config import DATABASE_CONFIG, get_logger
+
 from . import LerHistorico as lerHistorico
 from . import database_manager as db_manager
 
+logger = get_logger(__name__)
+
 
 class AnaliseHistorico:
-    """
-    Classe orquestradora do processo de análise de histórico escolar.
-
-    Papel desta classe:
-    - Coordenar banco de dados, IA e validações
-    - Controlar o ciclo de vida da análise (criação, processamento, persistência ou anulação)
-    - Garantir consistência em caso de falha em qualquer etapa
-
-    Importante:
-    Nenhuma regra pesada de equivalência vive aqui.
-    A comparação é responsabilidade exclusiva da IA.
-    """
-
-    def __init__(self, payload):
-        """
-        Inicializa a análise com os dados vindos da API.
-
-        payload esperado:
-        {
-            'id_analise': int,
-            'usuario_id': int,
-            'historico': str | None,            # URL de PDF / imagem / zip
-            'historico_interno': dict | None,   # Histórico já estruturado
-            'grade': str,                       # Currículo
-            'candidato': int
-        }
-        """
-        # Cliente responsável por comunicação com a IA
+    def __init__(self, payload: dict[str, Any]) -> None:
         self.gemini = lerHistorico.Gemini()
-
-        # Gerenciador centralizado de banco de dados
-        # Mantém conexão, commit, rollback e padronização de retorno
-        self.db = db_manager.DatabaseManager({
-            'host': '192.168.0.9',
-            'database': 'dtb_lyceum_prod',
-            'user': 'lyceum',
-            'password': 'lyceum',
-            'port': 1433
-        })
-
-        # Payload original recebido da API (não modificar)
+        self.db = db_manager.DatabaseManager(DATABASE_CONFIG)
         self.payload = payload
 
+    def processar_historico(self, grade: dict[str, Any]) -> dict[str, Any]:
+        logger.info("Iniciando processamento de historico para analise %s", self.payload.get("id_analise"))
 
-    def processar_historico(self, grade):
-        """
-        Executa o fluxo completo de análise do histórico.
-
-        Etapas:
-        1) Cria registro inicial no banco
-        2) Decide qual tipo de histórico será usado
-        3) Chama IA para extração/comparação
-        4) Valida retornos
-        5) Persiste resultado ou anula análise
-
-        Parâmetros:
-        - grade (dict): grade curricular normalizada
-
-        Retorno:
-        - dict com status, mensagem e detalhes
-        """
-
-        # Cria o registro inicial da análise no banco
-        # Esse ID será usado para UPDATE ou anulação
-        id = self.db.inserir_analise_historico(
+        id_reg = self.db.inserir_analise_historico(
             self.payload['id_analise'],
             self.payload['usuario_id']
         )
 
-        # Validação defensiva:
-        # Se falhar aqui, nada deve continuar
-        if not id or not isinstance(id, dict) or 'buscaId' not in id:
+        if not id_reg or not isinstance(id_reg, dict) or 'buscaId' not in id_reg:
             return {
                 "status": "erro",
-                "mensagem": "Falha ao iniciar análise no banco de dados",
-                "detalhes": "inserir_analise_historico retornou valor inválido"
+                "mensagem": "Falha ao iniciar analise no banco de dados",
+                "detalhes": "inserir_analise_historico retornou valor invalido"
             }
 
+        busca_id = id_reg['buscaId']
 
         try:
-            """
-            Regra de decisão da fonte de dados:
+            historico = self.payload.get("historico")
+            if not historico:
+                self.db.anular_validacao(busca_id, "Historico nao informado")
+                return self._erro("Historico e obrigatorio", None)
 
-            - Apenas histórico externo:
-              → PDF / imagem / ZIP
+            resultado = self.gemini.transformToJson(historico=historico, grade=grade)
 
-            - Apenas histórico interno:
-              → JSON estruturado já validado
-
-            - Ambos:
-              → IA usa os dois, priorizando o interno
-            """
-
-            if self.payload['historico_interno'] is None:
-                # Caso comum: histórico enviado como arquivo
-                resultado = self.gemini.transformToJson(
-                    url=self.payload['historico'],
-                    grade=grade
-                )
-
-            elif self.payload['historico'] is None:
-                # Caso em que só existe histórico interno
-                try:
-                    comparacao = self.gemini.send_for_docling(
-                        docling_doc=None,
-                        historico_interno=self.payload['historico_interno'],
-                        grade=grade
-                    )
-
-                    # Padroniza saída para manter contrato com o restante do sistema
-                    resultado = {
-                        "extracao": self.payload['historico_interno'],
-                        "comparacao": comparacao
-                    }
-
-                except Exception as e:
-                    # Qualquer erro aqui invalida a análise
-                    self.db.anular_validacao(id['buscaId'], e)
-                    return {
-                        "status": "erro",
-                        "mensagem": "Erro ao analisar histórico interno",
-                        "detalhes": str(e)
-                    }
-
-            else:
-                # Cenário completo: histórico externo + interno
-                resultado = self.gemini.transformToJson(
-                    url=self.payload['historico'],
-                    historico_interno=self.payload['historico_interno'],
-                    grade=grade
-                )
-            
-            # Segurança básica:
-            # IA obrigatoriamente deve retornar um dicionário
             if not isinstance(resultado, dict):
-                self.db.anular_validacao(
-                    id['buscaId'],
-                    f"Resultado inválido retornado pela IA: {resultado}"
-                )
+                self.db.anular_validacao(busca_id, f"Resultado invalido: tipo={type(resultado).__name__}")
+                return self._erro("Resposta invalida do servico de IA", resultado)
+
+            if self._tem_erro(resultado):
+                motivo = resultado.get("Motivo") or self._extrair_motivo_erro(resultado)
+                self.db.anular_validacao(busca_id, f"Erro na IA: {motivo}")
+                return self._erro("Erro ao analisar o historico", resultado)
+
+            comparacao = resultado.get("comparacao", {})
+            if isinstance(comparacao, dict):
+                comparacao = comparacao.get("comparacao_disciplinas", [])
+            if not isinstance(comparacao, list):
+                comparacao = []
+
+            if len(comparacao) == 0:
+                self.db.anular_validacao(busca_id, "Resposta sem comparacao")
+                return self._erro("Nao ha comparacao do historico ou estrutura invalida", resultado)
+
+            execucao = self.db.salvar_analise_historico(busca_id, resultado, grade)
+            if execucao.get("status") == "sucesso":
+                logger.info("Processamento concluido com sucesso para analise %s", self.payload.get("id_analise"))
                 return {
-                    "status": "erro",
-                    "mensagem": "Resposta inválida do serviço de IA",
-                    "detalhes": resultado
-                }
-
-            # Erro explícito retornado pela IA
-            if (
-                resultado.get("Erro") is True
-                or (isinstance(resultado.get("extracao"), dict) and resultado["extracao"].get("Erro"))
-                or (isinstance(resultado.get("comparacao"), dict) and resultado["comparacao"].get("Erro"))
-            ):
-                self.db.anular_validacao(id['buscaId'], resultado)
-                return {
-                    "status": "erro",
-                    "mensagem": "Erro ao analisar o histórico",
-                    "detalhes": resultado
-                }
-
-
-            # A comparação deve gerar uma lista de disciplinas equivalentes
-            if 'comparacao_disciplinas' not in resultado['comparacao']:
-                self.db.anular_validacao(
-                    id['buscaId'],
-                    f"Nenhuma equivalência encontrada: {resultado}"
-                )
-                return {
-                    "status": "erro",
-                    "mensagem": "Não há comparacao do histórico ou estrutura inválida",
-                    "detalhes": resultado
-                }
-
-            elif resultado['comparacao']['comparacao_disciplinas'] == []:
-                self.db.anular_validacao(
-                    id['buscaId'],
-                    f"Nenhuma equivalência encontrada: {resultado}"
-                )
-                return {
-                    "status": "erro",
-                    "mensagem": "Não há comparacao do histórico",
-                    "detalhes": resultado
-                }
-
-            # Persistência da análise
-            try:
-                execucao = self.db.salvar_analise_historico(
-                    id['buscaId'],
-                    resultado,
-                    grade
-                )
-
-                if execucao['status'] == 'sucesso':
-                    return {
-                        "status": "sucesso",
-                        "mensagem": "Análise processada e salva com sucesso",
-                        "detalhes": resultado
+                    "status": "sucesso",
+                    "mensagem": "Analise processada e salva com sucesso",
+                    "detalhes": {
+                        "extracao": resultado.get("extracao"),
+                        "comparacao": comparacao,
                     }
-
-                # Falha ao salvar no banco
-                self.db.anular_validacao(
-                    id['buscaId'],
-                    "Erro ao salvar análise no banco de dados"
-                )
-                return {
-                    "status": "erro",
-                    "mensagem": "Erro ao salvar análise no banco de dados",
-                    "detalhes": execucao
                 }
 
-            except Exception as e:
-                self.db.anular_validacao(id['buscaId'], resultado)
-                return {
-                    "status": "erro",
-                    "mensagem": "Erro ao tentar salvar análise no banco de dados",
-                    "detalhes": str(e)
-                }
+            self.db.anular_validacao(busca_id, "Erro ao salvar analise no banco de dados")
+            return self._erro("Erro ao salvar analise no banco de dados", execucao)
 
         except Exception as e:
-            # Erro inesperado no fluxo principal
-            self.db.anular_validacao(
-                id['buscaId'],
-                f"Erro ao começar o processo de comparar: {e}"
-            )
+            logger.error("Erro inesperado ao processar historico: %s", e, exc_info=True)
+            self.db.anular_validacao(busca_id, f"Erro no processamento: {e}")
+            return self._erro("Erro inesperado ao processar historico", str(e))
 
+    def _tem_erro(self, resultado: dict[str, Any]) -> bool:
+        if resultado.get("Erro") is True:
+            return True
+        extracao = resultado.get("extracao")
+        if isinstance(extracao, dict) and extracao.get("Erro"):
+            return True
+        comparacao = resultado.get("comparacao")
+        if isinstance(comparacao, dict) and comparacao.get("Erro"):
+            return True
+        return False
 
-        except Exception as e:
-            
-            self.db.anular_validacao(
-                id['buscaId'],
-                f"Erro ao começar o processo de comparar: {e}"
-            )
+    def _extrair_motivo_erro(self, resultado: dict[str, Any]) -> str:
+        for chave in ("extracao", "comparacao"):
+            sub = resultado.get(chave)
+            if isinstance(sub, dict) and sub.get("Erro"):
+                return sub.get("Motivo", "Motivo desconhecido")
+        return "Erro desconhecido"
 
-        
-    def buscarGrade(self):
-        """
-        Busca a grade curricular do aluno no banco e normaliza os dados.
+    def _erro(self, mensagem: str, detalhes: Any) -> dict[str, Any]:
+        return {"status": "erro", "mensagem": mensagem, "detalhes": detalhes}
 
-        Retorno:
-        - dict com chave sendo o nome da disciplina em UPPER
-        - Estrutura otimizada para comparação textual pela IA
-        """
-
+    def buscarGrade(self) -> dict[str, Any]:
         resultado = self.db.fetch_all(
             """
             SELECT
@@ -259,14 +115,13 @@ class AnaliseHistorico:
             [self.payload['grade'], self.payload['candidato']]
         )
 
-        json_novas = {}
+        json_novas: dict[str, Any] = {}
 
         for item in resultado:
             nome = item.get("DISCIPLINA")
             if not nome:
                 continue
 
-            # Normalização para comparação textual
             chave = nome.strip().upper()
 
             json_novas[chave] = {
@@ -282,19 +137,7 @@ class AnaliseHistorico:
         return json_novas
 
 
-
-def main(payload):
-    """
-    Ponto de entrada padrão do módulo.
-
-    Fluxo:
-    - Instancia AnaliseHistorico
-    - Busca grade curricular
-    - Processa o histórico completo
-
-    Retorna diretamente o JSON final para a API.
-    """
+def main(payload: dict[str, Any]) -> dict[str, Any]:
     analise = AnaliseHistorico(payload)
     grade = analise.buscarGrade()
     return analise.processar_historico(grade)
-

@@ -5,11 +5,15 @@ Cliente de API - Sistema de Processamento de Documentos
 Gerencia comunicação com APIs externas
 """
 
-import requests
 import json
 import time
 from typing import Dict, Any, Optional
-from urllib.parse import urljoin
+
+import requests
+
+from shared.config import AWS_API_KEY, get_logger
+
+logger = get_logger(__name__)
 
 
 class APIClient:
@@ -60,14 +64,14 @@ class APIClient:
         
         headers = {
             'Content-Type': 'application/json',
-            'X-API-Key': '11BtClxfG39xxbqCo07hN43Vz6vthzM47XJuQEZO'
+            'X-API-Key': AWS_API_KEY
         }
         
         last_exception = None
         
         for attempt in range(self.max_retries + 1):
             try:
-                print(f"Tentativa {attempt + 1}/{self.max_retries + 1} para processar documento: {tipo_doc}")
+                logger.info(f"Tentativa {attempt + 1}/{self.max_retries + 1} para processar documento: {tipo_doc}")
                 
                 response = self.session.post(
                     api_url,
@@ -83,7 +87,7 @@ class APIClient:
                     
                     # Se for erro 504 (timeout) e ainda temos tentativas, tenta novamente
                     if response.status_code == 504 and attempt < self.max_retries:
-                        print(f"Erro HTTP 504 (timeout) na tentativa {attempt + 1}. Aguardando {self.retry_delay}s antes de tentar novamente...")
+                        logger.error(f"Erro HTTP 504 (timeout) na tentativa {attempt + 1}. Aguardando {self.retry_delay}s antes de tentar novamente...")
                         time.sleep(self.retry_delay)
                         continue
                     
@@ -91,13 +95,13 @@ class APIClient:
                     raise Exception(f"Erro HTTP {response.status_code}: {error_message}")
                 
                 # Se chegou aqui, a requisição foi bem-sucedida
-                print(f"Documento processado com sucesso na tentativa {attempt + 1}")
+                logger.info(f"Documento processado com sucesso na tentativa {attempt + 1}")
                 return response.json()
                 
             except requests.exceptions.Timeout as e:
                 last_exception = e
                 if attempt < self.max_retries:
-                    print(f"Timeout na tentativa {attempt + 1}. Aguardando {self.retry_delay}s antes de tentar novamente...")
+                    logger.error(f"Timeout na tentativa {attempt + 1}. Aguardando {self.retry_delay}s antes de tentar novamente...")
                     time.sleep(self.retry_delay)
                     continue
                 else:
@@ -106,7 +110,7 @@ class APIClient:
             except requests.exceptions.RequestException as e:
                 last_exception = e
                 if attempt < self.max_retries:
-                    print(f"Erro de requisição na tentativa {attempt + 1}: {str(e)}. Aguardando {self.retry_delay}s antes de tentar novamente...")
+                    logger.error(f"Erro de requisição na tentativa {attempt + 1}: {str(e)}. Aguardando {self.retry_delay}s antes de tentar novamente...")
                     time.sleep(self.retry_delay)
                     continue
                 else:
@@ -122,91 +126,13 @@ class APIClient:
         else:
             raise Exception("Falha inesperada após múltiplas tentativas")
     
-    def get_cep_data(self, cep: str) -> Dict[str, Any]:
-        """
-        Obtém dados de endereço via CEP usando a API ViaCEP
-        
-        Args:
-            cep: CEP a ser consultado
-            
-        Returns:
-            Dados do endereço
-            
-        Raises:
-            Exception: Em caso de erro na consulta
-        """
-        # Remove caracteres não numéricos do CEP
-        cep_clean = ''.join(filter(str.isdigit, cep))
-        
-        if len(cep_clean) != 8:
-            raise Exception("CEP deve ter 8 dígitos")
-        
-        # Formata CEP com hífen
-        cep_formatted = f"{cep_clean[:5]}-{cep_clean[5:]}"
-        
-        url = f"https://viacep.com.br/ws/{cep_formatted}/json/"
-        
-        try:
-            response = self.session.get(url, timeout=self.timeout)
-            
-            if response.status_code != 200:
-                raise Exception(f"Erro ao consultar CEP: HTTP {response.status_code}")
-            
-            data = response.json()
-            
-            # Verifica se o CEP foi encontrado
-            if 'erro' in data:
-                raise Exception("CEP não encontrado")
-            
-            return data
-            
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Erro ao consultar CEP: {str(e)}")
-        except json.JSONDecodeError as e:
-            raise Exception(f"Erro ao decodificar resposta do CEP: {str(e)}")
-    
-    def get_city_code(self, cidade: str, estado: str) -> Optional[str]:
-        """
-        Obtém o código da cidade (implementação simplificada)
-        Em um sistema real, isso seria uma consulta ao banco de dados
-        
-        Args:
-            cidade: Nome da cidade
-            estado: Sigla do estado
-            
-        Returns:
-            Código da cidade ou None se não encontrado
-        """
-        # Esta é uma implementação simplificada
-        # Em um sistema real, seria feita uma consulta ao banco de dados
-        # para buscar o código da cidade baseado no nome e estado
-        
-        # Mapeamento simplificado para demonstração
-        city_codes = {
-            ('São Paulo', 'SP'): '00009295',
-            ('Rio de Janeiro', 'RJ'): '00009296',
-            ('Belo Horizonte', 'MG'): '00009297',
-            # Adicione mais cidades conforme necessário
-        }
-        
-        return city_codes.get((cidade, estado))
-    
     def close(self):
-        """
-        Fecha a sessão HTTP
-        """
         self.session.close()
-    
+
     def __enter__(self):
-        """
-        Suporte para context manager
-        """
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        Suporte para context manager
-        """
         self.close()
 
 
@@ -268,19 +194,10 @@ class ViaCEPClient:
             raise Exception(f"Erro ao decodificar resposta: {str(e)}")
     
     def close(self):
-        """
-        Fecha a sessão HTTP
-        """
         self.session.close()
-    
+
     def __enter__(self):
-        """
-        Suporte para context manager
-        """
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        Suporte para context manager
-        """
         self.close()

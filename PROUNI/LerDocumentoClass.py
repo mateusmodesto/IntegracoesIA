@@ -1,293 +1,292 @@
-from datetime import datetime
+"""
+Integracao com Google Gemini para validacao e extracao de documentos PROUNI.
+
+Fluxo:
+    1. analisar_documento() recebe URL + tipo esperado
+    2. Etapa 1 (flash-lite): valida se o documento bate com o tipo informado
+    3. Etapa 2 (flash): extrai dados estruturados (so se validacao passou)
+"""
+
+import os
 import subprocess
-from dotenv import load_dotenv
+from datetime import datetime
+from typing import Dict, Any, Optional
+
+import requests
 from google import genai
 from google.genai import types
-import httpx
-from langsmith import wrappers
-import requests
-import os
-import json
+
+from shared.config import GEMINI_API_KEY_PROUNI, get_logger
+from shared.gemini_helpers import safe_json_load, baixar_arquivo
+
+logger = get_logger(__name__)
+
+# ── Modelos Gemini ────────────────────────────────────────────────────────
+MODELO_VALIDACAO = "gemini-2.5-flash-lite"
+MODELO_EXTRACAO = "gemini-2.5-flash"
+
+# ── Extensoes suportadas ──────────────────────────────────────────────────
+MIME_TYPES = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "tiff": "image/tiff",
+    "pdf": "application/pdf",
+}
+
+# ── Prompt base de validacao ──────────────────────────────────────────────
+PROMPT_VALIDACAO = """
+Voce e um extrator de dados de documentos brasileiros a partir de PDFs e imagens (scans de documentos fisicos).
+
+Sua tarefa e:
+1. Ler o arquivo (PDF ou imagem) recebido.
+2. Identificar qual e o tipo de documento.
+3. Comparar para ver se realmente bate com o tipo de documento informado no campo "tipo_documento".
+4. Retornar o JSON com as informacoes extraidas.
+
+FORMATO GERAL DO JSON:
+{
+    "document_informado": "<tipo_documento_informado>",
+    "document_type": "<tipo_do_documento>",
+    "is_valid": true | false,
+    "observations": "comentarios curtos ou vazio se nada a observar"
+}
+
+Se nao for possivel identificar o documento:
+{
+    "document_type": "desconhecido",
+    "document_informado": "<tipo_documento_informado>",
+    "is_valid": false,
+    "observations": "nao foi possivel identificar o documento"
+}
+
+Retorne APENAS o JSON, sem texto extra.
+"""
+
+# ── Regras de validacao por tipo de documento ─────────────────────────────
+REGRAS_VALIDACAO: Dict[str, str] = {
+    "CPF": """
+        REGRAS DE VALIDACAO:
+        1. Se o documento informado for CPF e o documento identificado for RG OU CNH, entao is_valid = true.
+    """,
+    "RG": """
+        REGRAS DE VALIDACAO:
+        1. Se o documento informado for RG e o documento identificado for CNH, entao is_valid = true.
+    """,
+    "HISTORICO_ESCOLAR": """
+        REGRAS DE VALIDACAO:
+        1. Se o documento informado for Historico Escolar do Ensino Medio ou Certificado de Conclusao
+           de Ensino Medio ou Declaracao de Conclusao ou algo que defina que terminou o ensino medio,
+           mas caso o documento identificado for de algum outro tipo de documento escolar, entao is_valid = false.
+           Deve aceitar apenas do ensino medio.
+    """,
+    "Declaracao de auxilio financeiro": """
+        REGRAS DE VALIDACAO:
+        1. Considere valido (is_valid=true) qualquer documento que traga evidencia explicita de
+           recebimento de auxilio/beneficio/renda externa (ex.: Bolsa Familia/Auxilio Brasil,
+           INSS/aposentadoria/pensao/BPC, seguro-desemprego, pensao alimenticia ou credito
+           bancario identificado como beneficio). Se nao houver essa evidencia, is_valid=false.
+    """,
+    "CTPS - Qualificacao Civil": "",
+    "CTPS - Pagina Em Branco": """
+        REGRAS DE VALIDACAO:
+        1. O documento so devera ser considerado valido se for uma pagina de contrato de trabalho
+           em branco da CTPS.
+    """,
+    "CTPS - Ultimo Contrato": """
+        REGRAS DE VALIDACAO:
+        1. O documento so devera ser considerado valido se for uma pagina de contrato de trabalho da CTPS.
+    """,
+    "declaracao de renda": """
+        REGRAS DE VALIDACAO:
+        1. Considere valido (is_valid=true) qualquer documento que mostre de forma explicita uma
+           renda/entrada de dinheiro (holerite, extrato bancario com creditos, declaracao de
+           rendimentos, comprovante de aposentadoria/pensao/beneficio, recibo de pagamento ou
+           contrato que informe valor de remuneracao). Se nao houver evidencia, is_valid=false.
+    """,
+    "pro-labore": """
+        REGRAS DE VALIDACAO:
+        1. Considere valido (is_valid=true) qualquer documento que indique explicitamente pagamento
+           de pro-labore ao titular (demonstrativo/recibo, holerite com "pro-labore", extrato com
+           credito identificado como pro-labore ou declaracao contabil da empresa informando o valor).
+           Se nao houver mencao explicita a pro-labore, is_valid=false.
+    """,
+    "Comprovante de Residencia / Dec. que mora sozinho": """
+        REGRAS DE VALIDACAO:
+        1. Considere valido (is_valid=true) qualquer documento que comprove endereco residencial
+           do titular ou uma declaracao explicita de que a pessoa mora sozinha.
+        2. Exemplos aceitos: contas de consumo, fatura de cartao, correspondencia oficial,
+           contrato de aluguel, boleto/documento bancario com endereco.
+        3. Tambem aceita declaracao assinada informando residencia ou que mora sozinho.
+        4. Se nao contiver endereco identificavel nem declaracao explicita, is_valid=false.
+    """,
+}
+
+# ── Prompt de extracao de holerite ────────────────────────────────────────
+PROMPT_EXTRACAO_HOLERITE = """
+Voce e um extrator de dados de holerites brasileiros a partir de PDFs e imagens.
+
+Extraia as seguintes informacoes:
+- Salario
+- Adicionais
+- Salario Bruto
+- Salario Liquido
+- Descontos
+
+Retorne um JSON neste formato:
+{
+    "salario": "valor ou null",
+    "adicionais": {"tipo_do_adicional": "valor"},
+    "salario_bruto": "valor ou null",
+    "salario_liquido": "valor ou null",
+    "descontos": {"tipo_do_desconto": "valor"},
+    "observations": "comentarios curtos ou vazio"
+}
+"""
 
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "config.env"))
-    
+class GeminiProuni:
+    """Cliente Gemini especializado em documentos PROUNI."""
 
-class Gemini():
     def __init__(self):
-        self.gemini_client = genai.Client()
-        self.client = wrappers.wrap_gemini(self.gemini_client,tracing_extra={
-            "tags": ["gemini", "python"],
-            "metadata": {
-                "integration": "google-genai",
-            },
-        },)
-        
-        self.prompt_valida = """
-            Você é um extrator de dados de documentos brasileiros a partir de PDFs e imagens (scans de documentos físicos).
+        self.client = genai.Client(api_key=GEMINI_API_KEY_PROUNI)
 
-            Sua tarefa é:
-            1. Ler o arquivo (PDF ou imagem) recebido.
-            2. Identificar qual é o tipo de documento.
-            3. Comparar para ver se realmente bate com o tipo de documento informado no campo "tipo_documento" (ex: RG, CPF, CNH, etc).
-            4. Retornar o JSON com as informações extraídas.
+    # ── Metodo principal ──────────────────────────────────────────────────
 
-            --------------------------------
-            FORMATO GERAL DO JSON
-            --------------------------------
+    def analisarDocumento(self, url: str, tipo_doc: str) -> Dict[str, Any]:
+        """Alias para retrocompatibilidade."""
+        return self.analisar_documento(url, tipo_doc)
 
-            {
-            "document_informado": "<tipo_documento_informado>",
-            "document_type": "<tipo_do_documento>",
-            "is_valid": true | false,
-            "observations": "comentários curtos ou \"\" se nada a observar"
-            }
-
-            --------------------------------
-            Se não for possível identificar o documento:
-            --------------------------------          
-
-            {
-            "document_type": "desconhecido",
-            "document_informado": "<tipo_documento_informado>",
-            "is_valid": false,
-            "observations": "não foi possível identificar o documento"
-            }
-
-            Agora, sempre que receber um PDF ou imagem, devolva APENAS o JSON neste formato. 
-
-            """
-        
-        self.prompt_documentos = {
-            'CPF': """
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            1. Se o documento informado for CPF e o documento identificado for RG OU CNH, então is_valid = true.
-            """,
-            'RG': """
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            1. Se o documento informado for RG e o documento identificado for CNH, então is_valid = true.            
-            """,
-            'HISTORICO_ESCOLAR': """
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            1. Se o documento informado for Histórico Escolar do Ensino Médio ou Certificado de Conclusão de Ensino Médio e o documento identificado for de algum outro tipo de documento escolar, então is_valid = false. Deve aceitar apenas do ensino médio. 
-            """,
-            'Declaracao de auxilio financeiro': """
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            1. Se o documento informado for "Declaração de Auxílio Financeiro", considere válido (is_valid=true) qualquer documento que traga evidência explícita de recebimento de auxílio/benefício/renda externa (ex.: Bolsa Família/Auxílio Brasil, INSS/aposentadoria/pensão/BPC, seguro-desemprego/seguro, pensão alimentícia ou crédito bancário identificado como benefício). Se não houver essa evidência explícita, is_valid=false.
-            """,
-            'CTPS - Qualificacao Civil': """
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            """,
-            'CTPS - Pagina Em Branco': """
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            1. Se o documento informado for CTPS - Página em Branco, o documento só deverá ser considerado válido se for uma página de contrato de trabalho em branco da CTPS.
-            """,
-            'CTPS - Ultimo Contrato': """
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            1. Se o documento informado for CTPS - Último Contrato, o documento só deverá ser considerado válido se for uma página de contrato de trabalho da CTPS.
-            """,
-            'declaracao de renda': """
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            1. Se o documento informado for "Declaração de Renda", considere válido (is_valid=true) qualquer documento que mostre de forma explícita uma renda/entrada de dinheiro (valor e/ou periodicidade), como holerite/contracheque, extrato bancário com créditos identificados, declaração de rendimentos, comprovante de aposentadoria/pensão/benefício, recibo de pagamento ou contrato/declaração que informe valor de remuneração. Se não houver evidência explícita de renda, is_valid=false.
-            """,
-            'pro-labore': """
-            --------------------------------
-            REGRAS DE VALIDAÇÃO
-            --------------------------------
-            1. Se o documento informado for "Pró-labore", considere válido (is_valid=true) qualquer documento que indique explicitamente pagamento de pró-labore ao titular (ex.: demonstrativo/recibo de pró-labore, holerite com “pró-labore”, extrato com crédito identificado como pró-labore ou declaração/contábil da empresa informando o valor). Se não houver menção explícita a pró-labore ou pagamento equivalente ao sócio/administrador, is_valid=false.
-            """
-        }
-        self.prompt_extrair = """
-
+    def analisar_documento(self, url: str, tipo_doc: str) -> Dict[str, Any]:
         """
+        Analisa um documento: valida o tipo e, se valido, extrai dados.
 
-    def analisarDocumento(self, url, tipo_doc):
-        retorno = {}
-        ext = url.lower().split(".")[-1]
-        if ext in ["jpg", "jpeg", "png", "tiff"]:
-            retorno['validacao'] = self.lerDocumento(url, tipo_doc, 'image/jpeg', 'validacao')
-            if retorno['validacao'].get("is_valid") == True:
-                retorno['extracao'] = self.lerDocumento(url, tipo_doc, 'image/jpeg', 'extracao')
-            return retorno
-        elif ext == "pdf":
-            retorno['validacao'] = self.lerDocumento(url, tipo_doc, 'application/pdf', 'validacao')
-            if retorno['validacao'].get("is_valid") == True:
-                retorno['extracao'] = self.lerDocumento(url, tipo_doc, 'application/pdf', 'extracao')
-            return retorno
-        elif ext == 'docx':
-            return self.docx_to_pdf_from_url_word(url, tipo_doc)
-            
-        else:
-            return {"Erro": True, "Motivo": "Tipo de arquivo não suportado"}
-        
-    def lerDocumento(self, url, tipo_doc, metodo, tipo_prompt):
-        
-        try:
-            if url.startswith("http"):
-                doc_data = httpx.get(url, timeout=60).content
-            else:
-                with open(url, "rb") as f:
-                    doc_data = f.read()
-            if tipo_prompt == 'validacao':
-                self.prompt_valida += self.prompt_documentos.get(tipo_doc, "")
-                response_validacao = self.client.models.generate_content(
-                    model='gemini-2.5-flash-lite',
-                    contents=[
-                        types.Part.from_bytes(
-                            data=doc_data,
-                            mime_type=metodo,
-                        ),
-                        self.prompt_valida + f"O tipo de documento informado é: {tipo_doc}"
-                    ]
-                )
-                return self._safe_json_load(response_validacao.text)
-            
-            elif tipo_prompt == 'extracao':
+        Args:
+            url: URL ou caminho local do arquivo.
+            tipo_doc: Tipo de documento esperado (ex: 'CPF', 'RG').
 
-                if tipo_doc == 'holerite':
+        Returns:
+            Dict com chaves 'validacao' e opcionalmente 'extracao'.
+        """
+        ext = url.rsplit(".", 1)[-1].lower()
 
-                    response_extracao = self.client.models.generate_content(
-                        model='gemini-2.5-flash',
-                        contents=[
-                            types.Part.from_bytes(
-                                data=doc_data,
-                                mime_type=metodo,
-                            ),
-                            """
-                                Você é um extrator de dados de holerites brasileiros a partir de PDFs e imagens (scans de documentos físicos).
+        if ext == "docx":
+            return self._processar_docx(url, tipo_doc)
 
-                                Sua tarefa é extrair as seguintes informações do holerite:
-                                    - Salário
-                                    - Adicionais 
-                                    - Salário Bruto
-                                    - Salário Líquido
-                                    - Descontos
+        mime_type = MIME_TYPES.get(ext)
+        if not mime_type:
+            return {"Erro": True, "Motivo": f"Extensao '{ext}' nao suportada"}
 
-                                Retorne um JSON com as informações extraídas, seguindo este formato:
-                                {   
-                                    "salario": "valor ou null",
-                                    "adicionais": {
-                                        "tipo_do_adicional": "valor do adicional",                                       
-                                        "tipo_do_adicional": "valor do adicional"
-                                    },
-                                    "salario_bruto": "valor ou null",
-                                    "salario_liquido": "valor ou null",
-                                    "descontos": {
-                                        "tipo_do_desconto": "valor do desconto",                                       
-                                        "tipo_do_desconto": "valor do desconto"
-                                    },
-                                    "observations": "comentários curtos ou \"\" se nada a observar"
-                                }
-                            """
-                      ]
-                    )
-                    return self._safe_json_load(response_extracao.text)
+        return self._processar_documento(url, tipo_doc, mime_type)
 
-        except Exception as e:
-            return {"Erro": True, "Motivo": str(e)}
-        
-    def docx_to_pdf_from_url_word(self, url, tipo_doc, pdf_name='DocumentoTransformado.pdf'):
-        retorno = {}
-        project_dir = os.getcwd()
-        safe_tipo_doc = str(tipo_doc).replace(' ', '_') if tipo_doc else 'tipo_documento'
-        
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        file_id = f"{safe_tipo_doc}_{timestamp}"
+    # ── Pipeline padrao (imagem / pdf) ────────────────────────────────────
 
-        if pdf_name is None:
-            pdf_name = f"{safe_tipo_doc}_{timestamp}.pdf"
-
-        docx_path = os.path.join(project_dir, f"{file_id}.docx")
-        pdf_path = os.path.join(project_dir, pdf_name)
-
-        # baixar DOCX
-        r = requests.get(url)
-        r.raise_for_status()
-        with open(docx_path, "wb") as f:
-            f.write(r.content)
+    def _processar_documento(self, url: str, tipo_doc: str, mime_type: str) -> Dict[str, Any]:
+        """Executa validacao e extracao em duas etapas."""
+        retorno: Dict[str, Any] = {}
 
         try:
-            libreoffice_path = "C:\\Program Files\\LibreOffice\\program\\soffice.exe"
-
-            # converter via LibreOffice headless
-            subprocess.run(
-                [
-                    libreoffice_path,
-                    "--headless",
-                    "--convert-to", "pdf",
-                    "--outdir", project_dir,
-                    docx_path
-                ],
-                check=True
-            )
-
-            # LibreOffice gera PDF com o mesmo nome base
-            generated_pdf = docx_path.replace(".docx", ".pdf")
-            os.rename(generated_pdf, pdf_path)
-
-            with open(pdf_path, "rb") as pf:
-                pdf_bytes = pf.read()
-
-            response = self.lerDocumento(pdf_path, tipo_doc, 'application/pdf', 'validacao')
-            retorno['validacao'] = response
-
-            response_validacao = self._safe_json_load(response.text)
-            if response_validacao.get("is_valid") == True:
-                response_extracao = self.lerDocumento(pdf_path, tipo_doc, 'application/pdf', 'extracao')
-                retorno['extracao'] = self._safe_json_load(response_extracao.text)
-            else:
-                retorno['extracao'] = {"Erro": True, "Motivo": "Documento inválido"}
-
+            doc_bytes = baixar_arquivo(url)
         except Exception as e:
-            retorno['Erro'] = True
-            retorno['Motivo'] = str(e)
+            logger.error(f"Falha ao baixar documento: {e}")
+            return {"Erro": True, "Motivo": f"Falha ao baixar arquivo: {e}"}
 
-        finally:
-            for path in (docx_path, pdf_path):
-                try:
-                    if os.path.exists(path):
-                        os.remove(path)
-                except Exception:
-                    pass
+        # Etapa 1: Validacao
+        retorno["validacao"] = self._validar(doc_bytes, mime_type, tipo_doc)
+
+        # Etapa 2: Extracao (so se validou)
+        if retorno["validacao"].get("is_valid"):
+            retorno["extracao"] = self._extrair(doc_bytes, mime_type, tipo_doc)
 
         return retorno
 
-    def _safe_json_load(self, text: str):
-        if not text or not isinstance(text, str):
-            raise ValueError("Resposta vazia ou inválida da IA")
+    # ── Pipeline DOCX (converte para PDF primeiro) ────────────────────────
 
-        cleaned = text.strip()
-        cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+    def _processar_docx(self, url: str, tipo_doc: str) -> Dict[str, Any]:
+        """Converte DOCX para PDF via LibreOffice e processa."""
+        retorno: Dict[str, Any] = {}
+        project_dir = os.getcwd()
+        safe_tipo = str(tipo_doc).replace(" ", "_")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_id = f"{safe_tipo}_{timestamp}"
 
-        decoder = json.JSONDecoder()
+        docx_path = os.path.join(project_dir, f"{file_id}.docx")
+        pdf_path = os.path.join(project_dir, f"{file_id}.pdf")
 
-        # tenta decodificar a partir do primeiro { ou [
-        for start in range(len(cleaned)):
-            if cleaned[start] in "{[":
-                try:
-                    obj, idx = decoder.raw_decode(cleaned[start:])
-                    return obj
-                except json.JSONDecodeError:
-                    continue
+        try:
+            # Baixar DOCX
+            resp = requests.get(url, timeout=60)
+            resp.raise_for_status()
+            with open(docx_path, "wb") as f:
+                f.write(resp.content)
 
-        raise ValueError(
-            "Resposta da IA não contém JSON válido.\n"
-            f"Conteúdo recebido:\n{cleaned[:1000]}"
-        )
+            # Converter via LibreOffice headless
+            libreoffice = os.getenv("LIBREOFFICE_PATH", r"C:\Program Files\LibreOffice\program\soffice.exe")
+            subprocess.run(
+                [libreoffice, "--headless", "--convert-to", "pdf", "--outdir", project_dir, docx_path],
+                check=True,
+            )
 
+            generated_pdf = docx_path.replace(".docx", ".pdf")
+            os.rename(generated_pdf, pdf_path)
+
+            retorno = self._processar_documento(pdf_path, tipo_doc, "application/pdf")
+
+        except Exception as e:
+            logger.error(f"Erro ao converter DOCX: {e}")
+            retorno = {"Erro": True, "Motivo": str(e)}
+
+        finally:
+            for path in (docx_path, pdf_path):
+                if os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+
+        return retorno
+
+    # ── Etapa 1: Validacao ────────────────────────────────────────────────
+
+    def _validar(self, doc_bytes: bytes, mime_type: str, tipo_doc: str) -> Dict[str, Any]:
+        """Chama Gemini flash-lite para validar tipo do documento."""
+        regra = REGRAS_VALIDACAO.get(tipo_doc, "")
+        prompt = PROMPT_VALIDACAO + regra + f"\nO tipo de documento informado e: {tipo_doc}"
+
+        try:
+            response = self.client.models.generate_content(
+                model=MODELO_VALIDACAO,
+                contents=[
+                    types.Part.from_bytes(data=doc_bytes, mime_type=mime_type),
+                    prompt,
+                ],
+            )
+            return safe_json_load(response.text)
+        except Exception as e:
+            logger.error(f"Erro na validacao Gemini: {e}")
+            return {"Erro": True, "Motivo": str(e)}
+
+    # ── Etapa 2: Extracao ─────────────────────────────────────────────────
+
+    def _extrair(self, doc_bytes: bytes, mime_type: str, tipo_doc: str) -> Optional[Dict[str, Any]]:
+        """Chama Gemini flash para extrair dados do documento."""
+        if "holerite" not in tipo_doc.lower():
+            return None
+
+        try:
+            response = self.client.models.generate_content(
+                model=MODELO_EXTRACAO,
+                contents=[
+                    types.Part.from_bytes(data=doc_bytes, mime_type=mime_type),
+                    PROMPT_EXTRACAO_HOLERITE,
+                ],
+            )
+            return safe_json_load(response.text)
+        except Exception as e:
+            logger.error(f"Erro na extracao Gemini: {e}")
+            return {"Erro": True, "Motivo": str(e)}
+
+
+# ── Retrocompatibilidade ──────────────────────────────────────────────────
+# API.py e simple_main_flask.py importam "from .LerDocumentoClass import Gemini"
+Gemini = GeminiProuni

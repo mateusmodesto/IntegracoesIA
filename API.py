@@ -1,285 +1,319 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-import json
-import uvicorn
+"""
+API Flask principal - Sistema de Processamento de Documentos com IA.
 
-# Aplicação FastAPI principal
-app = FastAPI()
+Endpoints:
+    POST /validar           - Validacao de documentos de alunos
+    POST /PROUNI            - Validacao de documentos PROUNI
+    POST /analiseHistorico  - Analise de historico escolar (async)
+    POST /documentos/gerar  - Geracao de documentos juridicos
+    POST /sistema_compras/comparar  - Comparacao de planilhas
+    GET  /sistema_compras/download  - Download do resultado
+"""
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
-)
+import os
+import uuid
+import tempfile
+import threading
+from io import BytesIO
+from typing import Any, Dict, Optional, Tuple
+
+from flask import Flask, Response, request, jsonify, send_file
+from flask_cors import CORS
+
+from shared.config import get_logger, FLASK_PORT
+
+logger = get_logger(__name__)
+
+# ── App Flask ─────────────────────────────────────────────────────────────
+
+app = Flask(__name__)
+
+CORS(app, resources={r"/*": {
+    "origins": "*",
+    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization"],
+}})
+
+DOCS_OUTPUT_DIR = os.path.join(tempfile.gettempdir(), "docs_juridicos")
+os.makedirs(DOCS_OUTPUT_DIR, exist_ok=True)
 
 
-def err(msg, code=400, extra=None):
-    """
-    Retorna um JSON de erro padronizado.
+# ── Helpers ───────────────────────────────────────────────────────────────
 
-    - msg: mensagem principal de erro
-    - code: HTTP status code
-    - extra: informações adicionais (seguras para JSON)
-    """
+def _parse_json_body() -> Optional[Dict[str, Any]]:
+    """Tenta extrair JSON do body da request. Retorna None se invalido."""
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        data = None
+    return data if isinstance(data, dict) else None
 
-    payload = {
-        "status": "erro",
-        "msg": msg
-    }
 
-    # Garante que tudo em 'extra' seja serializável em JSON
-    # Evita erro 500 causado por Exception, objetos, etc.
+def _validate_required(data: Dict[str, Any], campos: list[str]) -> Optional[Tuple[Response, int]]:
+    """Valida campos obrigatorios. Retorna resposta de erro ou None se tudo ok."""
+    for campo in campos:
+        if data.get(campo) is None:
+            return _err(f"Campo '{campo}' e obrigatorio", 400)
+    return None
+
+
+def _err(msg: str, code: int = 400, extra: Optional[Dict[str, Any]] = None) -> Tuple[Response, int]:
+    """Retorna JSON de erro padronizado."""
+    payload: Dict[str, Any] = {"status": "erro", "msg": msg}
+
     if extra:
-        safe_extra = {}
         for k, v in extra.items():
             if isinstance(v, (dict, list, str, int, float, bool)) or v is None:
-                safe_extra[k] = v
+                payload[k] = v
             else:
-                safe_extra[k] = str(v)  # conversão defensiva
-        payload.update(safe_extra)
+                payload[k] = str(v)
 
-    return JSONResponse(content=payload, status_code=code)
-
+    return jsonify(payload), code
 
 
-@app.post("/validar")
-async def validar(request: Request):
-    """
-    Endpoint responsável por validar documentos enviados.
+def _format_result(result: Dict[str, Any], payload: Optional[Dict[str, Any]] = None) -> Tuple[Response, int]:
+    """Formata resposta padronizada baseada no status do resultado."""
+    status = result.get("status", "")
 
-    Fluxo:
-    1. Valida payload básico
-    2. Chama o módulo de leitura/validação
-    3. Retorna sucesso ou erro sem quebrar o integrador
-    """
+    if status == "sucesso":
+        return jsonify({"status": "processado", "resultado": result}), 200
 
+    if status in ("error", "timeout"):
+        body: Dict[str, Any] = {"status": "nao processado", "resultado": result}
+        if payload:
+            body["payload"] = payload
+        return jsonify(body), 200
+
+    return _err("Erro ao processar documento", 200, {"detail": result})
+
+
+def _convert_sets(obj: Any) -> Any:
+    """Converte sets para listas (JSON nao suporta set)."""
+    if isinstance(obj, set):
+        return list(obj)
+    if isinstance(obj, dict):
+        return {k: _convert_sets(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_convert_sets(i) for i in obj]
+    return obj
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────
+
+@app.route("/validar", methods=["POST"])
+def validar():
+    """Valida documentos de alunos (RG, CPF, CNH, certidoes, etc)."""
     import LeituraDocumentos.simple_main_flask as sp
 
     try:
-        # Lê o JSON do body
-        try:
-            data = await request.json()
-        except Exception:
-            data = None
+        data = _parse_json_body()
+        if data is None:
+            return _err("JSON invalido ou ausente", 400)
 
-        if not isinstance(data, dict):
-            return err("JSON inválido ou ausente", 400)
-
-        # Payload normalizado para o módulo de validação
         payload = {
             "arquivo": data.get("arquivo"),
             "aluno": data.get("aluno"),
             "posicao": data.get("posicao"),
             "usuario": data.get("usuario"),
-            "curso_entrega": data.get("curso_entrega")
+            "curso_entrega": data.get("curso_entrega"),
         }
 
-        # Validações obrigatórias (erro do cliente → 400)
-        if not payload['arquivo']:
-            return err("Campo 'arquivo' é obrigatório", 400)
-        if not payload['aluno']:
-            return err("Campo 'aluno' é obrigatório", 400)
-        if payload['posicao'] is None:
-            return err("Campo 'posicao' é obrigatório", 400)
+        erro = _validate_required(payload, ["arquivo", "aluno", "posicao", "usuario", "curso_entrega"])
+        if erro:
+            return erro
 
-        # Execução principal
         result = sp.main(payload)
-
-        # Retorno padronizado para o integrador
-        if result['status'] == 'sucesso':
-            return JSONResponse(content={
-                "status": "processado",
-                "resultado": result
-            }, status_code=200)
-
-        elif result['status'] == 'error':
-            return JSONResponse(content={
-                "status": "nao processado",
-                "resultado": result,
-                "payload": payload
-            }, status_code=200)
-
-        # Caso inesperado, mas sem quebrar o fluxo
-        return err("Erro ao processar documento", 200, {"detail": result})
+        return _format_result(result, payload)
 
     except Exception as e:
-        # Aqui sim erro interno real (500)
-        return err("Erro interno", 500, {"detail": str(e)})
+        logger.error(f"Erro interno em /validar: {e}", exc_info=True)
+        return _err("Erro interno", 500, {"detail": str(e)})
 
-@app.post("/PROUNI")
-async def prouni(request: Request):
-    """
-    Endpoint responsável por validar documentos enviados pelo PROUNI.
 
-    Fluxo:
-    1. Valida payload básico
-    2. Chama o módulo de leitura/validação
-    3. Retorna sucesso ou erro sem quebrar o integrador
-    """
-
+@app.route("/PROUNI", methods=["POST"])
+def prouni():
+    """Valida documentos do programa PROUNI."""
     import PROUNI.simple_main_flask as sp
 
     try:
-        # Lê o JSON do body
-        try:
-            data = await request.json()
-        except Exception:
-            data = None
+        data = _parse_json_body()
+        if data is None:
+            return _err("JSON invalido ou ausente", 400)
 
-        if not isinstance(data, dict):
-            return err("JSON inválido ou ausente", 400)
+        erro = _validate_required(data, ["arquivo", "pessoa", "tipo_documento"])
+        if erro:
+            return erro
 
-        # Payload normalizado para o módulo de validação
-        payload = {
-            "arquivo": data.get("arquivo"),
-            "aluno": data.get("aluno"),
-            "tipo_documento": data.get("tipo_documento")
-        }
-
-        # Validações obrigatórias (erro do cliente → 400)
-        if not payload['arquivo']:
-            return err("Campo 'arquivo' é obrigatório", 400)
-        if not payload['aluno']:
-            return err("Campo 'aluno' é obrigatório", 400)
-        if payload['tipo_documento'] is None:
-            return err("Campo 'tipo_documento' é obrigatório", 400)
-
-        # Execução principal
-        result = sp.main(payload)
-
-        # Retorno padronizado para o integrador
-        if result['status'] == 'sucesso':
-            return JSONResponse(content={
-                "status": "processado",
-                "resultado": result
-            }, status_code=200)
-
-        elif result['status'] == 'error':
-            return JSONResponse(content={
-                "status": "nao processado",
-                "resultado": result,
-                "payload": payload
-            }, status_code=200)
-
-        # Caso inesperado, mas sem quebrar o fluxo
-        return err("Erro ao processar documento", 200, {"detail": result})
+        result = sp.main(data)
+        return _format_result(result, data)
 
     except Exception as e:
-        # Aqui sim erro interno real (500)
-        return err("Erro interno", 500, {"detail": str(e)})
+        logger.error(f"Erro interno em /PROUNI: {e}", exc_info=True)
+        return _err("Erro interno", 500, {"detail": str(e)})
 
-@app.post("/analiseHistorico")
-async def analiseHistorico(request: Request):
+
+@app.route("/analiseHistorico", methods=["POST"])
+def analise_historico():
     """
-    Endpoint responsável por analisar histórico escolar.
+    Analisa historico escolar para dispensa de disciplinas.
 
-    Aceita:
-    - histórico externo (PDF, imagem, ZIP, etc)
-    - histórico interno (JSON estruturado)
-
-    O retorno HTTP NÃO indica sucesso da análise,
-    apenas sucesso da execução do serviço.
+    Processamento assincrono: retorna 200 imediatamente.
+    O resultado e gravado na tabela ANC_VALIDA_DISPENSA.
     """
-
     from AnaliseHistorico import simple_main as ah
 
     try:
-        try:
-            data = await request.json()
-        except Exception:
-            data = None
+        data = _parse_json_body()
+        if data is None:
+            return _err("JSON invalido ou ausente", 400)
 
-        if not isinstance(data, dict):
-            return err("JSON inválido ou ausente", 400)
-
-        # Histórico interno pode vir como string JSON
-        historico_interno = data.get("historico_interno")
-        if historico_interno:
-            try:
-                historico_interno = json.loads(historico_interno)
-            except json.JSONDecodeError:
-                return err("historico_interno inválido (JSON malformado)", 400)
-        else:
-            historico_interno = None
-
-        # Payload normalizado para o módulo de análise
         payload = {
             "aluno": data.get("aluno"),
             "historico": data.get("historico"),
-            "historico_interno": historico_interno,
             "grade": data.get("grade"),
             "candidato": data.get("candidato"),
             "id_analise": data.get("id_analise"),
-            "usuario_id": data.get("usuario_id")
+            "usuario_id": data.get("usuario_id"),
+            "tipo_historico": data.get("tipo_historico"),
         }
 
-        # Validações obrigatórias
-        if not payload['historico'] and not payload['historico_interno']:
-            return err("Campo 'historico' ou 'historico_interno' é obrigatório", 400)
-        if not payload['aluno']:
-            return err("Campo 'aluno' é obrigatório", 400)
-        if not payload['grade']:
-            return err("Campo 'grade' é obrigatório", 400)
-        if not payload['candidato']:
-            return err("Campo 'candidato' é obrigatório", 400)
-        if not payload['id_analise']:
-            return err("Campo 'id_analise' é obrigatório", 400)
-        if not payload['usuario_id']:
-            return err("Campo 'usuario_id' é obrigatório", 400)
+        erro = _validate_required(payload, ["historico", "aluno", "grade", "candidato", "id_analise", "usuario_id"])
+        if erro:
+            return erro
 
-        # Remove estruturas não serializáveis (ex: set)
-        payload = convert_sets(payload)
+        payload = _convert_sets(payload)
 
-        # Execução principal da análise
-        result = convert_sets(ah.main(payload))
+        def _processar():
+            try:
+                result = ah.main(payload)
+                logger.info(f"analiseHistorico concluido id_analise={payload['id_analise']}: {result.get('status')}")
+            except Exception as e:
+                logger.error(f"analiseHistorico erro id_analise={payload['id_analise']}: {e}", exc_info=True)
 
-        # O integrador não depende do retorno,
-        # apenas do efeito colateral (insert/update no banco)
-        if result['status'] == 'sucesso':
-            return JSONResponse(content={
-                "status": "processado",
-                "resultado": convert_sets(result['detalhes'])
-            }, status_code=200)
+        threading.Thread(target=_processar, daemon=True).start()
 
-        elif result['status'] == 'erro':
-            print(f"Não processou: {result}")
-            return JSONResponse(content={
-                "status": "nao processado",
-                "resultado": convert_sets(result['detalhes']),
-                "payload": payload
-            }, status_code=200)
-
-        # Caso não esperado
-        print(f"Erro ao processar histórico {result}")
-        return err("Erro ao processar histórico", 200, {
-            "detail": convert_sets(result.get('detalhes'))
-        })
+        return jsonify({
+            "status": "aceito",
+            "mensagem": "Analise recebida e sendo processada. Consulte a tabela ANC_VALIDA_DISPENSA.",
+        }), 200
 
     except Exception as e:
-        return err("Erro interno", 500, {"detail": str(e)})
+        logger.error(f"Erro interno em /analiseHistorico: {e}", exc_info=True)
+        return _err("Erro interno", 500, {"detail": str(e)})
 
 
+@app.route("/documentos/gerar", methods=["POST"])
+def gerar_documento():
+    """Gera documento juridico (.docx) a partir de template do banco."""
+    from GerarPeticao.agente_rag import AgenteJuridico, DB_CONFIG
 
-def convert_sets(obj):
-    """
-    Converte estruturas não serializáveis (ex: set)
-    em tipos compatíveis com JSON.
+    try:
+        data = _parse_json_body()
+        if data is None:
+            return _err("JSON invalido ou ausente", 400)
 
-    Usado antes de retornar respostas ou salvar logs.
-    """
+        tipo_documento = data.get("tipo_documento")
+        secoes = data.get("secoes")
+        dados = data.get("dados")
 
-    if isinstance(obj, set):
-        return list(obj)
-    elif isinstance(obj, dict):
-        return {k: convert_sets(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_sets(i) for i in obj]
-    else:
-        return obj
+        if not tipo_documento:
+            return _err("Campo 'tipo_documento' e obrigatorio", 400)
+        if not dados or not isinstance(dados, dict):
+            return _err("Campo 'dados' e obrigatorio e deve ser um objeto", 400)
 
+        # Flatten dados aninhados {id: {var: valor}} -> {var: valor}
+        dados_flat = {}
+        for key, value in dados.items():
+            if isinstance(value, dict):
+                dados_flat.update(value)
+            else:
+                dados_flat[key] = value
+
+        # Extrai textos das subcategorias ordenados
+        textos_secoes = []
+        if secoes and isinstance(secoes, list):
+            secoes_ordenadas = sorted(secoes, key=lambda s: s.get("ordem", 0))
+            textos_secoes = [s["subcategoria"] for s in secoes_ordenadas if s.get("subcategoria")]
+
+        agente = AgenteJuridico(db_config=DB_CONFIG)
+        doc_id = uuid.uuid4().hex[:8]
+        nome_arquivo = f"{doc_id}.docx"
+        docx_path = os.path.join(DOCS_OUTPUT_DIR, nome_arquivo)
+
+        agente.criar_documento(
+            tipo_documento=tipo_documento,
+            subcategorias_texto=textos_secoes,
+            output_path=docx_path,
+            dados=dados_flat,
+        )
+
+        return send_file(
+            docx_path,
+            as_attachment=True,
+            download_name=nome_arquivo,
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+    except ValueError as e:
+        return _err(str(e), 400)
+    except Exception as e:
+        logger.error(f"Erro interno em /documentos/gerar: {e}", exc_info=True)
+        return _err("Erro interno na geracao do documento", 500, {"detail": str(e)})
+
+
+# ── Comparador de Planilhas ───────────────────────────────────────────────
+
+@app.route("/sistema_compras/comparar", methods=["POST"])
+def comparar_route():
+    """Compara planilhas de ordem de compra."""
+    try:
+        from ComparadorTabela.processamento import processar
+    except ImportError:
+        return _err("Modulo ComparadorTabela nao disponivel", 501)
+
+    if "conta_certa" not in request.files:
+        return jsonify({"erro": "Envie o arquivo conta_certa"}), 400
+
+    files_comparar = [f for f in request.files.getlist("conta_comparar") if f.filename]
+    if not files_comparar:
+        files_comparar = [
+            f for key, f in request.files.items()
+            if key.startswith("conta_comparar") and f.filename
+        ]
+    if not files_comparar:
+        return jsonify({"erro": "Envie pelo menos um arquivo conta_comparar"}), 400
+
+    file_certa = request.files["conta_certa"]
+    tolerancia = float(request.form.get("tolerancia", 1.0))
+
+    resultado = processar(file_certa, files_comparar, tolerancia)
+
+    app.config["ULTIMO_RESULTADO"] = resultado["xlsx_bytes"]
+
+    return jsonify({
+        "total": resultado["total"],
+        "encontrados": resultado["encontrados"],
+        "sem_match": resultado["sem_match"],
+        "dados": resultado["dados"],
+    })
+
+
+@app.route("/sistema_compras/download", methods=["GET"])
+def download():
+    """Download do resultado da ultima comparacao."""
+    dados = app.config.get("ULTIMO_RESULTADO")
+    if dados is None:
+        return jsonify({"erro": "Nenhum resultado disponivel"}), 404
+
+    return send_file(
+        BytesIO(dados),
+        as_attachment=True,
+        download_name="planilha_comparada.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+# ── Entrypoint ────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # debug=False para evitar reload duplo e execução duplicada
-    uvicorn.run(app, host="0.0.0.0", port=5010)
+    app.run(host="0.0.0.0", port=FLASK_PORT, debug=False)

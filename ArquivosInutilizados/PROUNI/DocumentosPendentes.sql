@@ -1,0 +1,59 @@
+SELECT B.*
+FROM ANC_SOLICITACAO_BOLSA A
+JOIN ANC_SOLICITACAO_BOLSA_ANEXO B
+    ON A.ID = B.ID_SOLICITACAO
+WHERE A.nome NOT LIKE '%teste%'
+  AND A.ano = '2026'
+  AND A.TIPO_SOLICITACAO <> 'CEU'
+  AND A.JUSTIFICATIVA IS NOT NULL
+  AND A.APROVACAO IN ('2','3','4')
+  AND B.TIPO_DOCUMENTO IN (
+        'CERT_CONCLUSAO_CURSO',
+        'CERTIDAO_CASAMENTO',
+        'CERTIDAO_NASC',
+        'Carteira de Trabalho',
+        'ATUALIZADO',
+        'CLT',
+        'COMPROVANTE DE RESIDENCIA',
+        'CPF',
+        'ctps',
+        'DECLARAÇÃO DE AUSENCIA',
+        'DECLARAÇÃO DE AUSENCIA DE RENDA',
+        'DECLARAÇÃO DE CONCLUSÃO',
+        'Declaração de Renda Informal',
+        'DECLARACAO_AUSENCIA_RENDA',
+        'DECLARACAO_AUTONOMO',
+        'DECLARACAO_RENDA_AUTONOMO',
+        'DECLARACAO_RENDA_INFORMAL',
+        'EXTRATO_1_RENDA_AUTONOMO',
+        'EXTRATO_1_RENDA_INFORMAL',
+        'EXTRATO_2_RENDA_AUTONOMO',
+        'EXTRATO_2_RENDA_INFORMAL',
+        'EXTRATO_3_RENDA_AUTONOMO',
+        'EXTRATO_3_RENDA_INFORMAL',
+        'EXTRATO_COMPROBATORIO_1',
+        'EXTRATO_COMPROBATORIO_2',
+        'EXTRATO_COMPROBATORIO_3',
+        'EXTRATO_RENDA_AUTONOMO_1',
+        'EXTRATO_RENDA_AUTONOMO_2',
+        'EXTRATO_RENDA_AUTONOMO_3',
+        'Extratos1',
+        'HISTORICO',
+        'HOLERITE_1',
+        'HOLERITE_2',
+        'HOLERITE_3',
+        'HOLERITE_4',
+        'HOLERITE_5',
+        'HOLERITE_6',
+        'holerites',
+        'PRO-LABORE',
+        'OUTROS_DOCUMENTOS',
+        'RESIDENCIA',
+        'RG',
+        'RG_VERSO',
+        'PAGINA_FOTO',
+        'PAGINA_QUALI_CIVIL',
+        'PAGINA_ULTIMO_CONTRATO',
+        'PAGINA_BRANCO',
+        'PAGINA_QUALIFICACAO'
+  );

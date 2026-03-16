@@ -1,52 +1,65 @@
-from datetime import datetime
+import os
 import subprocess
-from dotenv import load_dotenv
+from datetime import datetime
+from typing import Any, Dict, Optional
+
 from google import genai
 from google.genai import types
-from langsmith import wrappers
-import httpx
-import requests
-import os
-import json
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "config.env"))
+from shared.config import GEMINI_API_KEY_PRIMARY, get_logger
+from shared.gemini_helpers import safe_json_load, baixar_arquivo
 
-class Gemini():
-    def __init__(self):
-        self.gemini_client = genai.Client()
-        self.client = wrappers.wrap_gemini(self.gemini_client,tracing_extra={
-            "tags": ["gemini", "python"],
-            "metadata": {
-                "integration": "google-genai",
-            },
-        },)
+# ---------------------------------------------------------------------------
+# Logger
+# ---------------------------------------------------------------------------
+logger = get_logger(__name__)
 
-        # ── ETAPA 1: Identificação e Validação ──
-        self.prompt_validacao = """
-            Você é um identificador de documentos brasileiros a partir de PDFs e imagens.
+# ---------------------------------------------------------------------------
+# Constantes de modelo
+# ---------------------------------------------------------------------------
+MODELO_VALIDACAO: str = "gemini-2.5-flash-lite"
+MODELO_EXTRACAO: str = "gemini-2.5-flash"
 
-            Sua tarefa é:
+# ---------------------------------------------------------------------------
+# Mapeamento extensao -> MIME type
+# ---------------------------------------------------------------------------
+MIME_TYPES: Dict[str, str] = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "tiff": "image/tiff",
+    "pdf": "application/pdf",
+}
+
+# ---------------------------------------------------------------------------
+# ETAPA 1: Prompt de identifica\u00e7\u00e3o e valida\u00e7\u00e3o
+# ---------------------------------------------------------------------------
+PROMPT_VALIDACAO: str = """
+
+            Voc\u00ea \u00e9 um identificador de documentos brasileiros a partir de PDFs e imagens.
+
+            Sua tarefa \u00e9:
             1. Ler o arquivo (PDF ou imagem) recebido.
-            2. Identificar qual é o tipo de documento.
+            2. Identificar qual \u00e9 o tipo de documento.
             3. Comparar o documento identificado com o tipo de documento esperado (informado externamente).
-            4. Aplicar as regras de substituição para verificar se o documento é aceito.
-            5. Verificar se o tipo de documento é aceito para a origem da entrega informada.
-            6. Responder SEMPRE com um único objeto JSON, sem qualquer texto extra.
+            4. Aplicar as regras de substitui\u00e7\u00e3o para verificar se o documento \u00e9 aceito.
+            5. Verificar se o tipo de documento \u00e9 aceito para a origem da entrega informada.
+            6. Responder SEMPRE com um \u00fanico objeto JSON, sem qualquer texto extra.
 
             --------------------------------
-            VALIDAÇÃO POR ORIGEM
+            VALIDA\u00c7\u00c3O POR ORIGEM
             --------------------------------
 
             origem_entrega = "pos_graduacao":
             Aceitar:
             - rg, cpf, cnh, certidao_nascimento, certidao_casamento, comprovante_residencia
-            - conclusao_historico (graduação ou superior)
+            - conclusao_historico (gradua\u00e7\u00e3o ou superior)
 
             origem_entrega = "graduacao":
             Aceitar:
             - rg, cpf, cnh, certidao_nascimento, certidao_casamento, comprovante_residencia
             - certificado_reservista, titulo_eleitor
-            - conclusao_historico (**Apenas** Ensino Médio)
+            - conclusao_historico (**Apenas** Ensino M\u00e9dio)
 
             origem_entrega = "escola":
             Aceitar:
@@ -55,56 +68,64 @@ class Gemini():
             - conclusao_historico (**Apenas** Ensino Fundamental)
 
             --------------------------------
-            REGRAS DE SUBSTITUIÇÃO
+            REGRAS DE SUBSTITUI\u00c7\u00c3O
             --------------------------------
 
             - CNH pode ser entregue no lugar do RG ou do CPF (is_valid = true).
             - RG pode ser entregue no lugar do CPF (is_valid = true).
-            - CPF NÃO pode ser entregue no lugar do RG (is_valid = false).
+            - CPF N\u00c3O pode ser entregue no lugar do RG (is_valid = false).
+            - comprovante_residencia pode ser qualquer documento que contenha nome, endere\u00e7o e CEP (contas banc\u00e1rias, contas de consumo, contratos, comunicados oficiais, etc). Por\u00e9m, para este caso, **sempre ser\u00e1 marcado como "comprovante_residencia"**, independente do tipo de documento enviado. (document_type = "comprovante_residencia").
 
             --------------------------------
             REGRAS
             --------------------------------
 
-            - NÃO tente inferir a origem a partir do conteúdo do documento.
-            - Apenas utilize a origem informada para validar se o documento é aceito ou não.
-            - Para conclusao_historico, identifique o nível de ensino (fundamental/medio/superior) e valide conforme a origem.
-            - Se não for possível identificar o documento, use "desconhecido".
+            - N\u00c3O tente inferir a origem a partir do conte\u00fado do documento.
+            - Apenas utilize a origem informada para validar se o documento \u00e9 aceito ou n\u00e3o.
+            - Para `conclusao_historico`, identifique o n\u00edvel de ensino (fundamental/medio/superior) e valide conforme a origem.
+            - Se n\u00e3o for poss\u00edvel identificar o documento, use "desconhecido".
+            - Se o documento informado for "comprovante_residencia" (document_type = "comprovante_residencia"), marque sempre o `document_type` como "comprovante_residencia", **independente do conte\u00fado do documento**.
 
             --------------------------------
             FORMATO DO JSON
             --------------------------------
+
+            Caso o documento seja identificado corretamente:
 
             {
             "document_expected": "<tipo_documento_esperado>",
             "document_type": "<tipo_do_documento_identificado>",
             "origem_entrega": "<origem_informada>",
             "is_valid": true | false,
-            "observations": "comentários curtos ou \\"\\""
+            "observations": "coment\u00e1rios curtos ou "" "
             }
 
-            Se não for possível identificar:
+            Se n\u00e3o for poss\u00edvel identificar:
+
             {
             "document_expected": "<tipo_documento_esperado>",
             "document_type": "desconhecido",
             "origem_entrega": "<origem_informada>",
             "is_valid": false,
-            "observations": "não foi possível identificar o documento"
+            "observations": "n\u00e3o foi poss\u00edvel identificar o documento"
             }
 
             Agora, sempre que receber um PDF ou imagem, devolva APENAS o JSON neste formato.
+
             """
 
-        # ── ETAPA 2: Prompts de extração por tipo de documento ──
-        self._regras_gerais = """
+# ---------------------------------------------------------------------------
+# Regras gerais usadas na etapa de extra\u00e7\u00e3o
+# ---------------------------------------------------------------------------
+REGRAS_GERAIS_EXTRACAO: str = """
             REGRAS GERAIS:
-            - Campos inexistentes, ilegíveis ou duvidosos devem ser null.
-            - Datas devem estar no formato "dd/mm/aaaa" quando possível.
-            - Não invente dados.
-            - Não traduza nem adapte textos.
-            - Mantenha acentuação, nomes próprios e abreviações como no documento.
-            - Não inclua qualquer texto fora do JSON.
-            - Não deve haver formatação para RG, CPF ou outros números (ex: pontos, traços, barras).
+            - Campos inexistentes, ileg\u00edveis ou duvidosos devem ser null.
+            - Datas devem estar no formato "dd/mm/aaaa" quando poss\u00edvel.
+            - N\u00e3o invente dados.
+            - N\u00e3o traduza nem adapte textos.
+            - Mantenha acentua\u00e7\u00e3o, nomes pr\u00f3prios e abrevia\u00e7\u00f5es como no documento.
+            - N\u00e3o inclua qualquer texto fora do JSON.
+            - N\u00e3o deve haver formata\u00e7\u00e3o para RG, CPF ou outros n\u00fameros (ex: pontos, tra\u00e7os, barras).
 
             FORMATO DO JSON:
             {
@@ -112,16 +133,19 @@ class Gemini():
             "origem_entrega": "<origem>",
             "is_valid": true | false,
             "fields": { ... },
-            "missing_mandatory_fields": ["campos obrigatórios que ficaram null"],
-            "observations": "comentários curtos ou \\"\\""
+            "missing_mandatory_fields": ["campos obrigat\u00f3rios que ficaram null"],
+            "observations": "coment\u00e1rios curtos ou \\"\\""
             }
 
-            is_valid = true somente se TODOS os campos obrigatórios forem preenchidos (não null).
+            is_valid = true somente se TODOS os campos obrigat\u00f3rios forem preenchidos (n\u00e3o null).
             Responda APENAS com o JSON.
         """
 
-        self.prompts_extracao = {
-            "rg": """
+# ---------------------------------------------------------------------------
+# ETAPA 2: Prompts de extra\u00e7\u00e3o por tipo de documento
+# ---------------------------------------------------------------------------
+PROMPTS_EXTRACAO: Dict[str, str] = {
+    "rg": """
                 Extraia os dados deste RG (Registro Geral).
 
                 fields:
@@ -137,18 +161,18 @@ class Gemini():
                 "cpf": string | null
                 }
 
-                Obrigatórios: nome_pessoa, rg
+                Obrigat\u00f3rios: nome_pessoa, rg
 
                 Regras especiais:
-                - RG novo (número único RG = CPF):
-                  Se houver apenas um número rotulado como "RG/CPF", "Registro Geral - CPF" ou equivalente:
-                  preencha rg e cpf com o MESMO número. Registrar em observations.
-                - Se o nome identificado for o que está acima da assinatura do diretor, O NOME ESTÁ ERRADO!
+                - RG novo (n\u00famero \u00fanico RG = CPF):
+                  Se houver apenas um n\u00famero rotulado como "RG/CPF", "Registro Geral - CPF" ou equivalente:
+                  preencha rg e cpf com o MESMO n\u00famero. Registrar em observations.
+                - Se o nome identificado for o que est\u00e1 acima da assinatura do diretor, O NOME EST\u00c1 ERRADO!
                 - orgao_emissor deve conter APENAS a sigla (ex: SSP).
                 - estado_emissor deve conter APENAS a sigla do estado (ex: SP, RJ, MG).
             """,
 
-            "cpf": """
+    "cpf": """
                 Extraia os dados deste CPF.
 
                 fields:
@@ -158,10 +182,10 @@ class Gemini():
                 "data_nascimento": "dd/mm/aaaa" | null
                 }
 
-                Obrigatórios: nome_pessoa, cpf
+                Obrigat\u00f3rios: nome_pessoa, cpf
             """,
 
-            "cnh": """
+    "cnh": """
                 Extraia os dados desta CNH.
 
                 fields:
@@ -176,11 +200,11 @@ class Gemini():
                 "data_emissao": "dd/mm/aaaa" | null
                 }
 
-                Obrigatórios: nome_pessoa, data_nascimento, rg, cpf
+                Obrigat\u00f3rios: nome_pessoa, data_nascimento, rg, cpf
             """,
 
-            "certidao_nascimento": """
-                Extraia os dados desta Certidão de Nascimento.
+    "certidao_nascimento": """
+                Extraia os dados desta Certid\u00e3o de Nascimento.
 
                 fields:
                 {
@@ -194,16 +218,16 @@ class Gemini():
                 "estado_nascimento": string | null
                 }
 
-                Obrigatórios: nome_pessoa, data_nascimento, cidade_nascimento, estado_nascimento
+                Obrigat\u00f3rios: nome_pessoa, data_nascimento, cidade_nascimento, estado_nascimento
 
                 Regras especiais:
                 - instituicao_nascimento deve conter o nome do hospital, maternidade ou local de nascimento.
-                - cidade_nascimento deve refletir APENAS a cidade conforme na certidão.
+                - cidade_nascimento deve refletir APENAS a cidade conforme na certid\u00e3o.
                 - estado_nascimento deve refletir APENAS o estado EM SIGLA (ex: SP, RJ).
             """,
 
-            "certidao_casamento": """
-                Extraia os dados desta Certidão de Casamento / União Estável.
+    "certidao_casamento": """
+                Extraia os dados desta Certid\u00e3o de Casamento / Uni\u00e3o Est\u00e1vel.
 
                 fields:
                 {
@@ -213,13 +237,13 @@ class Gemini():
                 "cpfs_conjuges": string[] | null
                 }
 
-                Obrigatórios: nome_noiva_pos_casamento, nome_noivo_pos_casamento, data_casamento
+                Obrigat\u00f3rios: nome_noiva_pos_casamento, nome_noivo_pos_casamento, data_casamento
             """,
 
-            "comprovante_residencia": """
-                Extraia os dados deste Comprovante de Residência.
-                Aceita qualquer documento que contenha nome, endereço e CEP
-                (contas bancárias, contas de consumo, contratos, comunicados oficiais).
+    "comprovante_residencia": """
+                Extraia os dados deste Comprovante de Resid\u00eancia.
+                Aceita qualquer documento que contenha nome, endere\u00e7o e CEP
+                (contas banc\u00e1rias, contas de consumo, contratos, comunicados oficiais).
 
                 fields:
                 {
@@ -228,11 +252,11 @@ class Gemini():
                 "cep": string | null
                 }
 
-                Obrigatórios: nome_pessoa, endereco, cep
+                Obrigat\u00f3rios: nome_pessoa, endereco, cep
             """,
 
-            "titulo_eleitor": """
-                Extraia os dados deste Título de Eleitor.
+    "titulo_eleitor": """
+                Extraia os dados deste T\u00edtulo de Eleitor.
 
                 fields:
                 {
@@ -248,10 +272,10 @@ class Gemini():
                 "numero_titulo": string | null
                 }
 
-                Obrigatórios: nome_pessoa, data_nascimento, municipio, estado, zona, secao, data_emissao, numero_titulo
+                Obrigat\u00f3rios: nome_pessoa, data_nascimento, municipio, estado, zona, secao, data_emissao, numero_titulo
             """,
 
-            "certificado_reservista": """
+    "certificado_reservista": """
                 Extraia os dados deste Certificado de Reservista.
 
                 fields:
@@ -267,11 +291,11 @@ class Gemini():
                 "serie": string | null
                 }
 
-                Obrigatórios: ra, nome_pessoa, cpf
+                Obrigat\u00f3rios: ra, nome_pessoa, cpf
             """,
 
-            "conclusao_historico": """
-                Extraia os dados deste documento de Conclusão / Histórico Escolar.
+    "conclusao_historico": """
+                Extraia os dados deste documento de Conclus\u00e3o / Hist\u00f3rico Escolar.
 
                 fields:
                 {
@@ -288,17 +312,91 @@ class Gemini():
                 }
 
                 Regras:
-                - Ensino superior implica automaticamente conclusão do Ensino Médio.
-                - Termos como "2º grau" indicam Ensino Médio.
+                - Ensino superior implica automaticamente conclus\u00e3o do Ensino M\u00e9dio.
+                - Termos como "2\u00ba grau" indicam Ensino M\u00e9dio.
                 - Se a origem for "escola", aceitar apenas Ensino Fundamental.
-                - Se a origem for "graduacao", aceitar apenas Ensino Médio.
+                - Se a origem for "graduacao", aceitar apenas Ensino M\u00e9dio.
                 - Se a origem for "pos_graduacao", aceitar apenas Ensino Superior.
 
-                Obrigatórios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
+                Obrigat\u00f3rios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
             """,
 
-            "declaracao_transferencia": """
-                Extraia os dados desta Declaração de Transferência.
+    "certificado_conclusao_ensino_medio": """
+                Extraia os dados deste documento de Conclus\u00e3o / Hist\u00f3rico Escolar.
+
+                fields:
+                {
+                "nome_pessoa": string | null,
+                "nivel_ensino": "ensino_fundamental" | "ensino_medio" | "ensino_superior" | null,
+                "historico": {
+                    "instituicao_ensino": string | null,
+                    "disciplinas": [] | null
+                },
+                "conclusao": {
+                    "ano_conclusao": "YYYY" | null,
+                    "instituicao_ensino": string | null
+                }
+                }
+
+                Regras:
+                - Ensino superior implica automaticamente conclus\u00e3o do Ensino M\u00e9dio.
+                - Termos como "2\u00ba grau" indicam Ensino M\u00e9dio.
+                - Se a origem for "escola", aceitar apenas Ensino Fundamental.
+                - Se a origem for "graduacao", aceitar apenas Ensino M\u00e9dio.
+                - Se a origem for "pos_graduacao", aceitar apenas Ensino Superior.
+
+                Obrigat\u00f3rios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
+            """,
+
+    "historico_escolar_fundamental": """
+                Extraia os dados deste documento de Conclus\u00e3o / Hist\u00f3rico Escolar.
+
+                fields:
+                {
+                "nome_pessoa": string | null,
+                "nivel_ensino": "ensino_fundamental" | "ensino_medio" | "ensino_superior" | null,
+                "historico": {
+                    "instituicao_ensino": string | null,
+                    "disciplinas": [] | null
+                },
+                "conclusao": {
+                    "ano_conclusao": "YYYY" | null,
+                    "instituicao_ensino": string | null
+                }
+                }
+
+                Regras:
+                - Ensino superior implica automaticamente conclus\u00e3o do Ensino M\u00e9dio.
+                - Termos como "2\u00ba grau" indicam Ensino M\u00e9dio.
+                - Se a origem for "escola", aceitar apenas Ensino Fundamental.
+                - Se a origem for "graduacao", aceitar apenas Ensino M\u00e9dio.
+                - Se a origem for "pos_graduacao", aceitar apenas Ensino Superior.
+
+                Obrigat\u00f3rios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
+            """,
+
+    "certificado_diploma_graduacao": """
+                Extraia os dados deste Certificado ou Diploma de Gradua\u00e7\u00e3o.
+                fields:
+                {
+                "nome_pessoa": string | null,
+                "nivel_ensino": "ensino_superior" | null,
+                "historico": {
+                    "instituicao_ensino": string | null,
+                    "disciplinas": [] | null
+                },
+                "conclusao": {
+                    "ano_conclusao": "YYYY" | null,
+                    "instituicao_ensino": string | null
+                }
+                }
+                Regras:
+                - Se a origem for "pos_graduacao", aceitar apenas Ensino Superior.
+                Obrigat\u00f3rios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
+            """,
+
+    "declaracao_transferencia": """
+                Extraia os dados desta Declara\u00e7\u00e3o de Transfer\u00eancia.
 
                 fields:
                 {
@@ -310,14 +408,14 @@ class Gemini():
                 }
 
                 Regras:
-                - "instituicao_origem" é a escola de onde o aluno está saindo.
-                - "cidade" e "estado" devem refletir o local de emissão (ex.: "São Paulo - SP").
+                - "instituicao_origem" \u00e9 a escola de onde o aluno est\u00e1 saindo.
+                - "cidade" e "estado" devem refletir o local de emiss\u00e3o (ex.: "S\u00e3o Paulo - SP").
 
-                Obrigatórios: nome_pessoa, instituicao_origem, data_emissao
+                Obrigat\u00f3rios: nome_pessoa, instituicao_origem, data_emissao
             """,
 
-            "carteira_vacinacao": """
-                Extraia os dados desta Carteira de Vacinação.
+    "carteira_vacinacao": """
+                Extraia os dados desta Carteira de Vacina\u00e7\u00e3o.
 
                 fields:
                 {
@@ -326,106 +424,141 @@ class Gemini():
                 "numero_cadastro": string | null
                 }
             """,
-        }
+}
 
-    def analisarDocumento(self, url, origem, tipo_doc=''):
-        ext = url.lower().split(".")[-1]
 
-        if ext in ["jpg", "jpeg", "png", "tiff"]:
-            mime_type = "image/jpeg"
-        elif ext == "pdf":
-            mime_type = "application/pdf"
-        elif ext == "docx":
-            return self.docx_to_pdf_from_url_word(url, origem, tipo_doc=tipo_doc)
-        else:
-            return {"Erro": True, "Motivo": "Tipo de arquivo não suportado"}
+# ===========================================================================
+# Classe principal
+# ===========================================================================
+class GeminiDocumentos:
+    """Analisa documentos brasileiros via Gemini (valida\u00e7\u00e3o + extra\u00e7\u00e3o)."""
+
+    def __init__(self) -> None:
+        self.client: genai.Client = genai.Client(api_key=GEMINI_API_KEY_PRIMARY)
+
+    # -----------------------------------------------------------------------
+    # M\u00e9todo p\u00fablico (snake_case)
+    # -----------------------------------------------------------------------
+    def analisar_documento(
+        self,
+        url: str,
+        origem: str,
+        tipo_doc: str = "",
+    ) -> Dict[str, Any]:
+        """Ponto de entrada: baixa o arquivo, identifica e extrai dados."""
+        ext = url.lower().rsplit(".", maxsplit=1)[-1]
+
+        if ext == "docx":
+            return self._docx_to_pdf_from_url(url, origem, tipo_doc=tipo_doc)
+
+        mime_type = MIME_TYPES.get(ext)
+        if mime_type is None:
+            logger.warning("Extens\u00e3o n\u00e3o suportada: %s", ext)
+            return {"Erro": True, "Motivo": "Tipo de arquivo n\u00e3o suportado"}
 
         try:
-            doc_bytes = self._baixar_arquivo(url)
+            doc_bytes = baixar_arquivo(url)
         except Exception as e:
+            logger.error("Falha ao baixar arquivo %s: %s", url, e)
             return {"Erro": True, "Motivo": str(e)}
 
         return self._processar_duas_etapas(doc_bytes, mime_type, origem, tipo_doc)
 
-    def _baixar_arquivo(self, url):
-        if url.startswith("http"):
-            return httpx.get(url, timeout=60).content
-        with open(url, "rb") as f:
-            return f.read()
+    # Retrocompatibilidade camelCase
+    analisarDocumento = analisar_documento
 
-    def _processar_duas_etapas(self, doc_bytes, mime_type, origem, tipo_doc=''):
-        retorno = {}
+    # -----------------------------------------------------------------------
+    # Pipeline de duas etapas (valida\u00e7\u00e3o + extra\u00e7\u00e3o)
+    # -----------------------------------------------------------------------
+    def _processar_duas_etapas(
+        self,
+        doc_bytes: bytes,
+        mime_type: str,
+        origem: str,
+        tipo_doc: str = "",
+    ) -> Dict[str, Any]:
+        retorno: Dict[str, Any] = {}
 
-        # ── Etapa 1: Identificação e Validação ──
+        # -- Etapa 1: Identifica\u00e7\u00e3o e Valida\u00e7\u00e3o --
         try:
             prompt_val = (
-                self.prompt_validacao
-                + f"O tipo de documento esperado é: {tipo_doc}\n"
-                + f"A origem da entrega informada é: {origem}"
+                PROMPT_VALIDACAO
+                + f"O tipo de documento esperado \u00e9: {tipo_doc}\n"
+                + f"A origem da entrega informada \u00e9: {origem}"
             )
             response_val = self.client.models.generate_content(
-                model='gemini-2.5-flash-lite',
+                model=MODELO_VALIDACAO,
                 contents=[
-                    types.Part.from_bytes(
-                        data=doc_bytes,
-                        mime_type=mime_type,
-                    ),
-                    prompt_val
-                ]
+                    types.Part.from_bytes(data=doc_bytes, mime_type=mime_type),
+                    prompt_val,
+                ],
             )
-            retorno['validacao'] = self._safe_json_load(response_val.text)
+            retorno["validacao"] = safe_json_load(response_val.text)
+            logger.info(
+                "Valida\u00e7\u00e3o conclu\u00edda: tipo=%s, valido=%s",
+                retorno["validacao"].get("document_type"),
+                retorno["validacao"].get("is_valid"),
+            )
         except Exception as e:
+            logger.error("Erro na etapa de valida\u00e7\u00e3o: %s", e)
             return {"Erro": True, "Motivo": str(e)}
 
-        # Se inválido, retorna sem extrair
-        if not retorno['validacao'].get('is_valid'):
+        # Se inv\u00e1lido, retorna sem extrair
+        if not retorno["validacao"].get("is_valid"):
             return retorno
 
-        # ── Etapa 2: Extração de Dados ──
-        doc_type = retorno['validacao'].get('document_type', 'desconhecido')
-        prompt_extracao = self.prompts_extracao.get(doc_type)
+        # -- Etapa 2: Extra\u00e7\u00e3o de Dados --
+        doc_type: str = retorno["validacao"].get("document_type", "desconhecido")
+        prompt_extracao = PROMPTS_EXTRACAO.get(doc_type)
 
         if not prompt_extracao:
-            retorno['extracao'] = {
+            retorno["extracao"] = {
                 "document_type": doc_type,
                 "origem_entrega": origem,
                 "is_valid": False,
                 "fields": {},
                 "missing_mandatory_fields": ["tipo_documento"],
-                "observations": f"Tipo '{doc_type}' não possui prompt de extração"
+                "observations": f"Tipo '{doc_type}' n\u00e3o possui prompt de extra\u00e7\u00e3o",
             }
             return retorno
 
         try:
             prompt_completo = (
-                f"Você é um extrator de dados de documentos brasileiros.\n"
-                f"O documento é do tipo: {doc_type}\n"
-                f"A origem da entrega é: {origem}\n\n"
+                f"Voc\u00ea \u00e9 um extrator de dados de documentos brasileiros.\n"
+                f"O documento \u00e9 do tipo: {doc_type}\n"
+                f"A origem da entrega \u00e9: {origem}\n\n"
                 f"{prompt_extracao}\n\n"
-                f"{self._regras_gerais}"
+                f"{REGRAS_GERAIS_EXTRACAO}"
             )
 
             response_ext = self.client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=MODELO_EXTRACAO,
                 contents=[
-                    types.Part.from_bytes(
-                        data=doc_bytes,
-                        mime_type=mime_type,
-                    ),
-                    prompt_completo
-                ]
+                    types.Part.from_bytes(data=doc_bytes, mime_type=mime_type),
+                    prompt_completo,
+                ],
             )
-            retorno['extracao'] = self._safe_json_load(response_ext.text)
+            retorno["extracao"] = safe_json_load(response_ext.text)
+            logger.info("Extra\u00e7\u00e3o conclu\u00edda para tipo=%s", doc_type)
         except Exception as e:
-            retorno['extracao'] = {"Erro": True, "Motivo": str(e)}
+            logger.error("Erro na etapa de extra\u00e7\u00e3o: %s", e)
+            retorno["extracao"] = {"Erro": True, "Motivo": str(e)}
 
         return retorno
 
-    def docx_to_pdf_from_url_word(self, url, origem, tipo_doc='', pdf_name='DocumentoTransformado.pdf'):
+    # -----------------------------------------------------------------------
+    # Convers\u00e3o DOCX -> PDF via LibreOffice
+    # -----------------------------------------------------------------------
+    def _docx_to_pdf_from_url(
+        self,
+        url: str,
+        origem: str,
+        tipo_doc: str = "",
+        pdf_name: Optional[str] = "DocumentoTransformado.pdf",
+    ) -> Dict[str, Any]:
         project_dir = os.getcwd()
-        safe_origem = str(origem).replace(' ', '_') if origem else 'origem'
-
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        safe_origem = str(origem).replace(" ", "_") if origem else "origem"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_id = f"{safe_origem}_{timestamp}"
 
         if pdf_name is None:
@@ -434,14 +567,21 @@ class Gemini():
         docx_path = os.path.join(project_dir, f"{file_id}.docx")
         pdf_path = os.path.join(project_dir, pdf_name)
 
-        # baixar DOCX
-        r = requests.get(url)
-        r.raise_for_status()
+        # Baixar DOCX usando utilit\u00e1rio compartilhado
+        try:
+            docx_bytes = baixar_arquivo(url)
+        except Exception as e:
+            logger.error("Falha ao baixar DOCX %s: %s", url, e)
+            return {"Erro": True, "Motivo": str(e)}
+
         with open(docx_path, "wb") as f:
-            f.write(r.content)
+            f.write(docx_bytes)
 
         try:
-            libreoffice_path = "C:\\Program Files\\LibreOffice\\program\\soffice.exe"
+            libreoffice_path = os.getenv(
+                "LIBREOFFICE_PATH",
+                r"C:\Program Files\LibreOffice\program\soffice.exe",
+            )
 
             subprocess.run(
                 [
@@ -449,9 +589,9 @@ class Gemini():
                     "--headless",
                     "--convert-to", "pdf",
                     "--outdir", project_dir,
-                    docx_path
+                    docx_path,
                 ],
-                check=True
+                check=True,
             )
 
             generated_pdf = docx_path.replace(".docx", ".pdf")
@@ -460,9 +600,12 @@ class Gemini():
             with open(pdf_path, "rb") as pf:
                 pdf_bytes = pf.read()
 
-            result = self._processar_duas_etapas(pdf_bytes, 'application/pdf', origem, tipo_doc)
+            result = self._processar_duas_etapas(
+                pdf_bytes, "application/pdf", origem, tipo_doc
+            )
 
         except Exception as e:
+            logger.error("Erro na convers\u00e3o DOCX->PDF: %s", e)
             result = {"Erro": True, "Motivo": str(e)}
 
         finally:
@@ -475,24 +618,11 @@ class Gemini():
 
         return result
 
-    def _safe_json_load(self, text):
-        if not text or not isinstance(text, str):
-            raise ValueError("Resposta vazia ou inválida da IA")
+    # Retrocompatibilidade do m\u00e9todo antigo
+    docx_to_pdf_from_url_word = _docx_to_pdf_from_url
 
-        cleaned = text.strip()
-        cleaned = cleaned.replace("```json", "").replace("```", "").strip()
 
-        decoder = json.JSONDecoder()
-
-        for start in range(len(cleaned)):
-            if cleaned[start] in "{[":
-                try:
-                    obj, idx = decoder.raw_decode(cleaned[start:])
-                    return obj
-                except json.JSONDecodeError:
-                    continue
-
-        raise ValueError(
-            "Resposta da IA não contém JSON válido.\n"
-            f"Conteúdo recebido:\n{cleaned[:1000]}"
-        )
+# ---------------------------------------------------------------------------
+# Alias para retrocompatibilidade
+# ---------------------------------------------------------------------------
+Gemini = GeminiDocumentos

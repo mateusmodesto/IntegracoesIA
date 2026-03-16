@@ -10,68 +10,82 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from .database_manager import DatabaseManager
-from .utils import Utils
+from shared.utils import Utils
+from shared.config import get_logger
 from .api_client import ViaCEPClient
+
+logger = get_logger(__name__)
 
 
 class BaseMigration(ABC):
     """
-    Classe base para migrações de documentos
+    Classe base para migrações de documentos.
+    Fornece métodos comuns para obter dados de aluno/pessoa e código de cidade.
     """
-    
+
     def __init__(self, db_manager: DatabaseManager):
         """
         Inicializa a migração base
-        
+
         Args:
             db_manager: Gerenciador de banco de dados
         """
         self.db = db_manager
         self.utils = Utils()
-    
+
     @abstractmethod
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
         Executa a migração dos dados
-        
+
         Args:
             response: Dados extraídos do documento
             aluno: Código do aluno
-            
+
         Returns:
             Número de linhas afetadas
         """
         pass
-    
+
     def get_aluno_data(self, aluno: str) -> Optional[Dict[str, Any]]:
         """
         Obtém dados do aluno
-        
+
         Args:
             aluno: Código do aluno
-            
+
         Returns:
             Dados do aluno ou None
         """
         return self.db.get_aluno_data(aluno)
-    
+
     def get_pessoa_data(self, pessoa: str) -> Optional[Dict[str, Any]]:
         """
         Obtém dados da pessoa
-        
+
         Args:
             pessoa: Código da pessoa
-            
+
         Returns:
             Dados da pessoa ou None
         """
         return self.db.get_pessoa_data(pessoa)
 
+    def _get_city_code(self, cidade: str, estado: str) -> Optional[Dict]:
+        """
+        Obtém código da cidade via banco de dados
+
+        Args:
+            cidade: Nome da cidade
+            estado: Sigla do estado
+
+        Returns:
+            Dicionário com dados da cidade ou None
+        """
+        return self.db.get_city_code(cidade, estado)
+
 
 class RGMigration(BaseMigration):
-    """
-    Migração de dados de RG
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -149,100 +163,8 @@ class RGMigration(BaseMigration):
         
         return rows_affected
 
-'''
-class CNHMigration(BaseMigration):
-    """
-    Migração de dados de CNH
-    """
-    
-    def migrate(self, response: Dict[str, Any], aluno: str) -> int:
-        """
-        Migra dados de CNH
-        
-        Args:
-            response: Dados extraídos da CNH
-            aluno: Código do aluno
-            
-        Returns:
-            Número de linhas afetadas
-        """
-        # Extrai dados do response
-        nome = response['fields'].get('nome', '')
-        numero_documento = self.utils.clean_document_number(response['fields'].get('numero_documento', ''))
-        data_nascimento = response['fields'].get('data_nascimento', '')
-        cpf = self.utils.clean_document_number(response['fields'].get('cpf', ''))
-        nome_pai = response['fields'].get('pai', '')
-        nome_mae = response['fields'].get('mae', '')
-        
-        # Obtém dados do aluno
-        aluno_data = self.get_aluno_data(aluno)
-        if not aluno_data:
-            return 0
-        
-        pessoa = aluno_data['PESSOA']
-        nome_compl_atual = aluno_data['NOME_COMPL']
-        
-        # Escolhe o nome a usar
-        nome_aluno = self.utils.choose_name(nome_compl_atual, nome)
-        
-        # Obtém dados atuais da pessoa
-        pessoa_data = self.get_pessoa_data(pessoa)
-        if not pessoa_data:
-            return 0
-        
-        cpf_atual = pessoa_data.get('CPF', '')
-        rg_atual = pessoa_data.get('RG_NUM', '')
-        dt_nasc_atual = pessoa_data.get('DT_NASC')
-        
-        # Converte data de nascimento
-        dt_nasc = self.utils.parse_date_br(data_nascimento)
-        
-        rows_affected = 0
-        
-        # Atualiza data de nascimento se válida e diferente
-        if dt_nasc and dt_nasc != dt_nasc_atual:
-            rows_affected += self.db.update_pessoa(pessoa, DT_NASC=dt_nasc)
-        
-        # Atualiza CPF se diferente
-        if cpf and cpf != cpf_atual:
-            rows_affected += self.db.update_pessoa(pessoa, CPF=cpf)
-        
-        # Atualiza RG se diferente
-        if numero_documento and numero_documento != rg_atual:
-            rows_affected += self.db.update_pessoa(pessoa, RG_NUM=numero_documento)
-        
-        if nome_pai:
-            rows_affected += self.db.update_pessoa(
-                pessoa,
-                NOME_PAI=nome_pai.upper() if nome_pai else None
-            )
-        if nome_mae:
-            rows_affected += self.db.update_pessoa(
-                pessoa,
-                NOME_MAE=nome_mae.upper() if nome_mae else None
-            )
-        # Atualiza dados do aluno
-        if nome_aluno:
-            rows_affected += self.db.update_aluno(
-                aluno,
-                NOME_COMPL=nome_aluno.upper(),
-                NOME_ABREV=self.utils.format_name_initcap(nome_aluno)
-            )
-            
-            # Atualiza dados da pessoa
-            rows_affected += self.db.update_pessoa(
-                pessoa,
-                NOME_COMPL=nome_aluno.upper(),
-                NOME_ABREV=self.utils.format_name_initcap(nome_aluno)
-            )
-        
-        return rows_affected
-'''
 
 class CPFMigration(BaseMigration):
-    """
-    Migração de dados de CPF
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -310,9 +232,6 @@ class CPFMigration(BaseMigration):
         return rows_affected
 
 class CertidaoNascimentoMigration(BaseMigration):
-    """
-    Migração de dados de Certidão de Nascimento
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -355,33 +274,16 @@ class CertidaoNascimentoMigration(BaseMigration):
                 pessoa,
                 NOME_MAE=nome_mae.upper() if nome_mae else None
             )
-        if codcidade['MUNICIPIO']:
+        if codcidade and codcidade.get('MUNICIPIO'):
             rows_affected += self.db.update_pessoa(
                 pessoa,
                 MUNICIPIO_NASC=codcidade['MUNICIPIO']
             )
-        
+
         return rows_affected
 
 
-    def _get_city_code(self, cidade: str, estado: str) -> Optional[str]:
-        """
-        Obtém código da cidade (implementação simplificada)
-        
-        Args:
-            cidade: Nome da cidade
-            estado: Sigla do estado
-            
-        Returns:
-            Código da cidade ou None
-        """
-        # Em um sistema real, seria feita uma consulta ao banco
-        return self.db.get_city_code(cidade, estado)
-
 class CertidaoCasamentoMigration(BaseMigration):
-    """
-    Migração de dados de Certidão de Casamento
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -431,9 +333,6 @@ class CertidaoCasamentoMigration(BaseMigration):
         return rows_affected
 
 class ComprovanteResidenciaMigration(BaseMigration):
-    """
-    Migração de dados de Comprovante de Residência
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -488,30 +387,14 @@ class ComprovanteResidenciaMigration(BaseMigration):
                 CEP=cep,
                 ENDERECO=logradouro,
                 END_NUM=numero if numero else None,
-                END_MUNICIPIO=codcidade['MUNICIPIO'] if codcidade['MUNICIPIO'] else None,
+                END_MUNICIPIO=codcidade['MUNICIPIO'] if codcidade and codcidade.get('MUNICIPIO') else None,
                 BAIRRO=bairro if bairro else None
             )
         
         return rows_affected
-    
-    def _get_city_code(self, cidade: str, estado: str) -> Dict:
-        """
-        Obtém código da cidade
-        
-        Args:
-            cidade: Nome da cidade
-            estado: Sigla do estado
-            
-        Returns:
-            Código da cidade ou None
-        """
-        # Implementação simplificada
-        return self.db.get_city_code(cidade, estado)  # Código padrão
+
 
 class CertificadoMedioMigration(BaseMigration):
-    """
-    Migração de dados de Certificado de Conclusão do Ensino Médio
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -571,9 +454,6 @@ class CertificadoMedioMigration(BaseMigration):
         return rows_affected
 
 class CertificadoGraduacaoMigration(BaseMigration):
-    """ 
-        Migração de dados de Certificado de Conclusão da Graduacao
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -619,9 +499,6 @@ class CertificadoGraduacaoMigration(BaseMigration):
         return rows_affected
 
 class HistoricoEscolarMigration(BaseMigration):
-    """
-    Migração de dados de Histórico Escolar
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -668,10 +545,6 @@ class HistoricoEscolarMigration(BaseMigration):
         return rows_affected
     
 class CarteiraVacinacaoMigration(BaseMigration):
-
-    """
-    Migração de dados de Carteira de Vacinação
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -736,9 +609,6 @@ class CarteiraVacinacaoMigration(BaseMigration):
         return rows_affected
 
 class CertificadoReservistaMigration(BaseMigration):
-    """
-    Migração de dados de Certificado de Reservista
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -907,9 +777,6 @@ class DocumentosResponsavelMigration(BaseMigration):
             return rows_affected
 
 class TituloEleitorMigration(BaseMigration):
-    """
-    Migração de dados de Título de Eleitor
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -933,7 +800,6 @@ class TituloEleitorMigration(BaseMigration):
         
         # Obtém dados do aluno
         aluno_data = self.get_aluno_data(aluno)
-        #  
         if not aluno_data:
             return 0
         
@@ -945,7 +811,6 @@ class TituloEleitorMigration(BaseMigration):
         
         # Obtém dados atuais da pessoa
         pessoa_data = self.get_pessoa_data(pessoa)
-        #  
         if not pessoa_data:
             return 0
         
@@ -956,7 +821,7 @@ class TituloEleitorMigration(BaseMigration):
         dt_expedicao = self.utils.parse_date_br(data_expedicao)
         
         rows_affected = 0
-        #  
+
         # Atualiza data de nascimento se válida e diferente
         if dt_nasc and dt_nasc != dt_nasc_atual:
             rows_affected += self.db.update_pessoa(pessoa, DT_NASC=dt_nasc)
@@ -982,11 +847,11 @@ class TituloEleitorMigration(BaseMigration):
                 pessoa,
                 TELEITOR_DTEXP=dt_expedicao
             )
-        if municipio['MUNICIPIO']:
+        if municipio and municipio.get('MUNICIPIO'):
             rows_affected += self.db.update_pessoa(
                 pessoa,
                 TELEITOR_MUN=municipio['MUNICIPIO']
-            ) 
+            )
         if nome_aluno:
             rows_affected += self.db.update_aluno(
                 aluno,
@@ -1000,27 +865,10 @@ class TituloEleitorMigration(BaseMigration):
                 NOME_COMPL=nome_aluno.upper(),
                 NOME_ABREV=self.utils.format_name_initcap(nome_aluno)
             )
-        #  
         return rows_affected
-    
-    def _get_city_code(self, cidade: str, estado: str) -> Optional[str]:
-        """
-        Obtém código da cidade (implementação simplificada)
-        
-        Args:
-            cidade: Nome da cidade
-            estado: Sigla do estado
-            
-        Returns:
-            Código da cidade ou None
-        """
-        # Em um sistema real, seria feita uma consulta ao banco
-        return self.db.get_city_code(cidade, estado)
+
 
 class HistoricoFundamentalMigration(BaseMigration):
-    """
-    Migração de dados de Histórico Escolar do Ensino Fundamental
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """
@@ -1033,7 +881,6 @@ class HistoricoFundamentalMigration(BaseMigration):
         Returns:
             Número de linhas afetadas
         """
-        #breakpoint()
         # Extrai dados do response
         instituicao_ensino = response['fields']['conclusao'].get('instituicao_ensino', '')
         
@@ -1067,9 +914,6 @@ class HistoricoFundamentalMigration(BaseMigration):
         return rows_affected
 
 class DeclaracaoTransferenciaMigration(BaseMigration):
-    """
-    Migração de dados de Declaração de Transferência
-    """
     
     def migrate(self, response: Dict[str, Any], aluno: str) -> int:
         """

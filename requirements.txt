@@ -1,7 +1,20 @@
-fastapi
-uvicorn
-pyodbc
-requests
+# Sistema de Processamento de Documentos - Dependências Python
+# Conversão de PHP para Python com Classes e Orientação a Objetos
+# Apenas dependências essenciais para produção
+
+# Banco de dados
+pyodbc>=4.0.34
+# Requisições HTTP
+requests>=2.28.0
+google
+google.genai
 httpx
-google-genai
+#fastapi
+flask
+flask-cors
+sympy
 python-dotenv
+#uvicorn
+python-docx
+openpyxl
+pandas

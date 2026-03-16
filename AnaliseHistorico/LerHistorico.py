@@ -1,531 +1,296 @@
-from datetime import datetime
-import subprocess
+import json
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
 from google import genai
 from google.genai import types
-import httpx
-import requests
-import os
-import re
-import json
-import zipfile
-import tempfile
-from pathlib import Path
 
-class Gemini():
-    def __init__(self):
-        self.client = genai.Client(api_key="AIzaSyAZ9IWdDOKKzSt8283YbPGF-iPV4esknkA")
-        
-        self.prompt = """
-            Você é um sistema especializado em comparação de disciplinas de históricos escolares brasileiros. Você recebe dados estruturados (JSON) já extraídos.
-            Sua tarefa é:
-            1) comparar as disciplinas já cursadas/aprovadas com as novas disciplinas;
-            2) identificar equivalências principalmente por NOME;
-            3) tratar corretamente disciplinas com numeração (I, II, III... / 1, 2, 3...) e fazer agrupamento quando necessário;
-            4) retornar SOMENTE as novas disciplinas que forem DISPENSADAS (possivel_dispensa = true) em um JSON final.
+from shared.config import GEMINI_API_KEY_PRIMARY, get_logger
+from shared.gemini_helpers import safe_json_load, baixar_arquivo
 
-            ENTRADAS
+logger = get_logger(__name__)
 
-            A) JSON DO HISTÓRICO (disciplinas já cursadas – já filtradas para aprovadas/dispensadas, mas valide)
-            Formato: um array contendo 1 objeto com várias chaves (cada chave é uma disciplina):
-            [
-            {
-                "disciplina1": {
-                "periodo": "2022/1",
-                "codigo": "EXT101",
-                "nome": "Práticas Extensionistas I",
-                "carga_horaria": 60,
-                "creditos": 2,
-                "nota": "8.00",
-                "situacao": "AP"
-                }
-            }
-            ]
+# ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
 
-            B) JSON DE NOVAS DISCIPLINAS (disciplinas que o aluno irá cursar)
-            Formato: um array contendo 1 objeto com várias chaves (cada chave é uma disciplina):
-            [
-            {
-                "disciplina1": { "codigo": "EXT200", "nome": "Práticas Extensionistas", "carga_horaria": 120 }
-            }
-            ]
+MODELO = "gemini-2.5-flash"
 
-            OBJETIVO
-            Retornar um JSON com comparacao_disciplinas contendo APENAS as novas disciplinas que podem ser dispensadas por equivalência com o histórico, aplicando as regras de numeração abaixo.
+GEN_CONFIG = types.GenerateContentConfig(
+    thinking_config=types.ThinkingConfig(thinking_budget=1024),
+    temperature=0.2,
+    response_mime_type="application/json",
+)
 
-            NORMALIZAÇÃO (RÁPIDA E ROBUSTA)
-            Antes de comparar nomes (sem explicar no output):
-            - transformar em minúsculas
-            - remover acentos
-            - remover pontuação e símbolos
-            - reduzir espaços múltiplos
+MIME_TYPES: Dict[str, str] = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".tiff": "image/tiff",
+}
 
-            DETECÇÃO DE NUMERAÇÃO (SUFIXO FINAL)
-            Uma disciplina pode ter SUFIXO NUMÉRICO FINAL, por exemplo:
-            - "Direito Penal I", "Direito Penal II", "Direito Penal IV"
-            - "Estágio Supervisionado 1", "Estágio Supervisionado 2"
-            Regras:
-            - Considere como sufixo final válido:
-            a) numerais romanos: I, II, III, IV, V, VI, VII, VIII, IX, X
-            b) números arábicos: 1, 2, 3, 4, 5...
-            - Extraia:
-            - base_name: nome sem o sufixo numérico final (após normalização)
-            - numeral: o sufixo (se existir); caso contrário numeral = "" (vazio)
+EXTENSOES_SUPORTADAS = set(MIME_TYPES.keys())
 
-            Exemplos:
-            - "Direito Penal I" -> base_name="direito penal", numeral="I"
-            - "Direito Penal" -> base_name="direito penal", numeral=""
-            - "Estagio Supervisionado 2" -> base_name="estagio supervisionado", numeral="2"
+PROMPT_COMPARACAO = (
+    "Compare disciplinas cursadas (historico) x novas (grade). Retorne JSON.\n"
+    "\n"
+    "IDIOMA: O historico pode estar em QUALQUER idioma (portugues, ingles, espanhol, etc). "
+    "Traduza mentalmente os nomes das disciplinas para portugues antes de comparar. "
+    "Ex: 'Calculus I'='Calculo I', 'Introduction to Computing'='Introducao a Computacao', "
+    "'General Chemistry'='Quimica Geral', 'Physics I'='Fisica I'.\n"
+    "\n"
+    "REGRA PRINCIPAL - COMPARACAO POR NOME:\n"
+    "A equivalencia e determinada EXCLUSIVAMENTE pelo nome da disciplina.\n"
+    "Normalizar antes de comparar: traduzir para portugues, minusculas, sem acentos, sem pontuacao, espacos unicos.\n"
+    "Considerar equivalente quando:\n"
+    "- Nomes IDENTICOS apos normalizacao, OU\n"
+    "- Nomes PARECIDOS: um contem o outro (minimo 6 chars), OU\n"
+    "- Nomes SIMILARES: >= 75%% das palavras da nova disciplina aparecem no nome do historico, OU\n"
+    "- SIGNIFICADO EQUIVALENTE: nomes diferentes mas que representam a mesma disciplina academica. "
+    "Usar conhecimento academico para identificar sinonimos e equivalencias semanticas "
+    "(ex: 'Calculo Diferencial'~'Calculo I', 'Introducao a Computacao'~'Fundamentos de Informatica', "
+    "'Lingua Portuguesa'~'Comunicacao e Expressao', 'Metodologia Cientifica'~'Metodos de Pesquisa').\n"
+    "IMPORTANTE: codigos de disciplina (ex: 'CMPS 131','MAT 201') NAO sao nomes. "
+    "NAO usar codigos, carga horaria ou outros campos para determinar equivalencia. "
+    "Se o historico so tem codigo sem nome descritivo, essa disciplina NAO pode ser considerada equivalente.\n"
+    "\n"
+    "NUMERACAO: sufixo final (I-X ou 1-9) = numeral; resto = base_name. Manter 'modulo','parte','nivel','turma'.\n"
+    "A(nova TEM numeral): A1)mesmo base+numeral->direto; A2)base sem numeral->generica; "
+    "A3)outros numerais->agrupa,obs:'Nova=NUM;historico cobre ate NUM_MAX'; A4)nada->nao dispensa\n"
+    "B(nova SEM numeral): B1)1 disciplina->direto; B2)multiplas numeradas->agrupa; "
+    "B3)generica+numeradas->prefere generica valida, senao agrupa\n"
+    "\n"
+    "SITUACAO VALIDA: APROVADO(AP,APR,APROVADO,APROVADA,APROV,DEFERIDO,DEFERIDA,APTO,APTA,AF,SAT), "
+    "DISPENSADO(DISPENSADO,DISPENSA,EQUIVALENCIA,APROVEITAMENTO,DP). "
+    "Equivalentes em ingles: PASS,PASSED,APPROVED,CREDIT,TRANSFER. Ignorar demais.\n"
+    "\n"
+    "CH: porcentagem=(ch_hist_total/ch_nova)*100, 1 decimal. ch_nova<=0->porcentagem=0.\n"
+    "OBS: ch>=nova->'CH compativel.'; ch<nova->'CH inferior (historico=XXh < nova=YYh).'\n"
+    "IMPORTANTE: carga horaria NAO determina dispensa. Mesmo com CH inferior, a disciplina PODE ser dispensada. "
+    "A CH e apenas informativa para registro, NAO e criterio de aprovacao/rejeicao.\n"
+    "\n"
+    "NOME_REGISTRO: match exato->nome original; agrupamento->'Base I, II e III'; "
+    "generica->nome sem numeral; bases diferentes->'Nome1 & Nome2'. Derivar das selecionadas. Possuir no **máximo 200 caracteres**\n"
+    "\n"
+    "PERIODO (SEM INFERENCIA): retornar apenas 'ano' e 'semestre' (sem campo periodo).\n"
+    "Extrair do campo periodo/ANO_SEM do historico SOMENTE se estiver explicitamente escrito no documento.\n"
+    "- Se vier no formato '2020/1', '2020-1', '2020.1' => ano='2020', semestre='1'.\n"
+    "- Puxar o que realmente estiver escrito, sem inferir. Ex: '2020' semestre='71' => ano='2020', semestre='71'. "
+    "- Se vier como '1o semestre 2020' ou equivalente => semestre='1' e ano='2020'.\n"
+    "- Se vier apenas o ANO (ex: '2020') e NAO houver semestre explicito => ano='2020' e semestre=null.\n"
+    "- Se o documento for anual e nao trouxer semestre explicito => ano conforme documento e semestre=null.\n"
+    "PROIBIDO: inventar, estimar, calcular ou assumir semestre (ex: nunca usar '4' como fallback).\n"
+    "\n"
+    "CH: OBRIGATORIO extrair carga_horaria de cada disciplina. Se ausente, usar 0.\n"
+    "\n"
+    "FILTRO FINAL OBRIGATORIO: O JSON de saida deve conter SOMENTE disciplinas que TEM equivalencia valida "
+    "e PODEM ser dispensadas (possivel_dispensa=true). "
+    "Se uma nova disciplina NAO tem equivalente, NAO inclua no array. "
+    "Se disciplinas_cursadas_equivalentes esta vazio, NAO inclua no array. "
+    "O array comparacao_disciplinas so deve ter itens com possivel_dispensa=true.\n"
+    '{"comparacao_disciplinas":[{"nova_disciplina":{"codigo":"","nome":"","carga_horaria":0},'
+    '"disciplinas_cursadas_equivalentes":[{"codigo":"","ano":"","semestre":"",'
+    '"nome":"","carga_horaria":0,"creditos":0,"nota":"","situacao":""}],'
+    '"porcentagem_aproveitamento":0,"possivel_dispensa":true,"observacao":"","nome_registro":""}]}'
+)
 
-            IMPORTANTE:
-            - Remova SOMENTE numeração no FINAL do nome.
-            - NÃO remova palavras como "modulo", "parte", "nivel", "turma".
+PROMPT_EXTRACAO = (
+    "Extraia o historico escolar do documento. Retorne JSON.\n"
+    "\n"
+    "IDIOMA: O documento pode estar em QUALQUER idioma (portugues, ingles, espanhol, etc). "
+    "Extraia os dados independente do idioma. Mantenha os nomes das disciplinas no idioma ORIGINAL do documento. "
+    "Traduza apenas campos de situacao para o padrao definido abaixo.\n"
+    "\n"
+    "REGRAS:\n"
+    "- Apenas dados presentes, nao invente. Tolere ruidos OCR.\n"
+    "- NOME DA DISCIPLINA: usar o nome completo/descritivo, NAO o codigo. "
+    "Se so existe codigo sem nome descritivo, usar o codigo como nome.\n"
+    "- CARGA HORARIA: OBRIGATORIO extrair de cada disciplina. Inteiro (ex:60,80). Se ausente, usar 0.\n"
+    "NOTA (REGRAS DE MEDIA):\n"
+    "- A nota e INFORMATIVA e NAO determina dispensa.\n"
+    "- Se 'disciplinas_cursadas_equivalentes' tiver APENAS 1 item: manter a nota original desse item.\n"
+    "- Se 'disciplinas_cursadas_equivalentes' tiver MAIS DE 1 item (agrupamento):\n"
+    "  * Calcular a MEDIA ARITMETICA das notas numericas dos itens.\n"
+    "  * Notas podem vir como string com virgula ou ponto (ex: '7,5' ou '7.5'). Converter para numero.\n"
+    "  * Ignorar notas vazias, '0.00' quando claramente ausente, ou nao numericas.\n"
+    "  * Se nenhuma nota valida existir, retornar nota='' (vazio).\n"
+    "  * Formatar a nota media com 2 casas decimais como string (ex: '7.33').\n"
+    "- Onde colocar a nota media:\n"
+    "  * No caso de agrupamento, no array 'disciplinas_cursadas_equivalentes', preencher o campo 'nota' de TODOS os itens com a MESMA nota media calculada.\n"
+    "  * (Opcional se quiser) adicionar na 'observacao' algo como: 'Nota media calculada a partir de X disciplinas'.\n"
+    "\n"
+    "- Situacao: APROVADO,REPROVADO,CURSANDO,TRANCADO,DISPENSADO,EQUIVALENCIA,CANCELADO,INDEFINIDO "
+    "(AP->APROVADO, RP->REPROVADO, PASS/PASSED/CREDIT/TRANSFER->APROVADO etc.)\n"
+    "- Incluir APENAS aprovadas e dispensadas.\n"
+    "- PERIODO: retornar apenas 'ano' e 'semestre' por disciplina (sem campo periodo).\n"
+    "  Extrair do campo periodo/ANO_SEM. Ano a esquerda, semestre apos hifen/barra.\n"
+    "  Semestral: ano e semestre encontrado. Anual: ano e semestre='4'.\n"
+    "  Se so tem ano sem semestre, semestre='4'.\n"
+    "- Campo vazio: texto->'', numero->0, opcional->null\n"
+    "\n"
+    "SCHEMA:\n"
+    '{"documento":{"tipo":"HISTORICO_ESCOLAR","instituicao":{"nome":"","campus":"","cidade":"","uf":"","cnpj":null},'
+    '"emissao":{"data":"","numero_documento":"","validacao_autenticidade":""}},'
+    '"aluno":{"nome":"","matricula":"","cpf":"","rg":"","data_nascimento":""},'
+    '"curso":{"nome":"","nivel":"","modalidade":"","turno":"","matriz_curricular":"","periodo_ingresso":"","forma_ingresso":""},'
+    '"situacao_academica":{"status":"","periodo_atual":"","data_situacao":""},'
+    '"indicadores":{"cr_ira":"","creditos_obtidos":0,"creditos_totais":0,"carga_horaria_cumprida":0,"carga_horaria_total":0,"percentual_integralizacao":""},'
+    '"disciplinas":{"NOME_DISCIPLINA":{"ano":"","semestre":"","codigo":"","carga_horaria":0,"creditos":0,"nota":"","frequencia":"","situacao":"","observacoes":""}},'
+    '"observacoes_gerais":""}'
+)
 
-            PADRONIZAÇÃO DA SITUAÇÃO (VALIDAÇÃO)
-            Padronize situacao do histórico:
-            - APROVADO se situacao ∈ ["AP","APR","APROVADO","APROVADA","APROV","Aprovado","Aprovada","DEFERIDO","DEFERIDA","APTO","APTA","AF"]
-            - DISPENSADO/EQUIVALENCIA se situacao ∈ ["DISPENSADO","DISPENSA","EQUIVALENCIA","EQUIVALÊNCIA","APROVEITAMENTO","DP"]
-            - REPROVADO se situacao ∈ ["RP","REPROVADO","REPROVADA","REPROV."]
-            - Caso contrário: "INDEFINIDO"
-            A nota pode aparecer como: ["Média", "Média Final", "MF", "Nota"] e deve ser mantida como string.
+# ---------------------------------------------------------------------------
+# Main class
+# ---------------------------------------------------------------------------
 
-            COMO ENCONTRAR EQUIVALÊNCIA (FOCO EM VELOCIDADE) 
-            1) Match principal por NOME (obrigatório): 
-            - Compare o nome normalizado da nova disciplina com o nome normalizado das disciplinas do histórico. 
-            - Considere equivalente quando: 
-            a) forem iguais (match exato), OU 
-            b) um nome contiver o outro (containment) com comprimento mínimo relevante (>= 6 caracteres), OU 
-            c) similaridade alta por tokens: 
-            - quebre em tokens (palavras) - calcule interseção / tokens_nova 
-            - se >= 0.75, considere equivalente
+class GeminiHistorico:
+    def __init__(self) -> None:
+        self.client = genai.Client(api_key=GEMINI_API_KEY_PRIMARY)
 
-            REGRAS DE NUMERAÇÃO E AGRUPAMENTO (ESSENCIAIS)
+    # -- public API ---------------------------------------------------------
 
-            Para cada NOVA disciplina N:
+    def send_for_docling(
+        self,
+        docling_doc: Union[Dict[str, Any], List[Any]],
+        grade: Union[Dict[str, Any], List[Any]],
+    ) -> Any:
+        partes: List[str] = [PROMPT_COMPARACAO]
 
-            1) Separe o histórico em grupos por base_name.
-            Para o base_name de N, obtenha:
-            - H_sem_numeral: disciplinas do histórico com numeral=""
-            - H_com_numeral: disciplinas do histórico com numeral != ""
+        partes.append("\n\nGRADE (novas disciplinas):\n" + json.dumps(grade, ensure_ascii=False))
 
-            2) CASO A: NOVA tem NUMERAL (ex.: "Direito Penal I")
-            Aplique nesta ordem:
-            A1) Se existir no histórico disciplina com MESMO base_name e MESMO numeral:
-                - equivalente = essa disciplina (ou disciplinas, se duplicadas)
-                - não agrupar com outros numerais
-            A2) Se NÃO existir o mesmo numeral, mas existir pelo menos 1 disciplina no histórico SEM numeral (H_sem_numeral não vazio):
-                - equivalente = a(s) disciplina(s) sem numeral (serve como “genérica” para qualquer numeração da nova grade)
-            A3) Se existir no histórico disciplinas com o mesmo base_name mas com OUTROS numerais (ex.: histórico tem I, II, III e nova é IV):
-                - equivalente = AGRUPAR TODAS as disciplinas do histórico disponíveis daquele base_name (I, II, III...) e usar como base para dispensa da nova IV
-                - observação deve indicar que a nova é numeral superior e o histórico cobre parcialmente (ex.: "Nova=IV; histórico cobre até III.")
-            A4) Se nada disso existir: não dispensa (não entra no output)
-
-            3) CASO B: NOVA NÃO tem NUMERAL (ex.: "Direito Penal")
-            B1) Se no histórico existir apenas 1 disciplina daquele base_name (somando com e sem numeral):
-                - equivalente = essa disciplina única (sem agrupar mais nada)
-            B2) Se no histórico existirem MÚLTIPLAS disciplinas daquele base_name com numerais diferentes (ex.: I, II, III):
-                - equivalente = AGRUPAR TODAS (I, II, III...) e retornar como lista (disciplinas_cursadas_equivalentes)
-                - observação deve indicar agrupamento por múltiplas variantes
-            B3) Se no histórico existirem tanto uma genérica (sem numeral) quanto numeradas:
-                - equivalente = use PRIMEIRO a genérica (sem numeral) se ela estiver APROVADA/DISPENSADA/EQUIVALENCIA;
-                - caso a genérica não seja válida, use as numeradas válidas e agrupe.
-
-            VALIDAÇÃO POR SITUAÇÃO (SÓ CONSIDERAR VÁLIDAS)
-            Ao selecionar equivalentes (simples ou agrupados), inclua SOMENTE disciplinas do histórico cuja situação padronizada seja:
-            "APROVADO" ou "DISPENSADO" ou "EQUIVALENCIA"
-            Se o conjunto final ficar vazio: não dispensa (não entra no output).
-
-            CARGA HORÁRIA E PORCENTAGEM
-            - Se equivalência for 1 disciplina:
-            ch_historico_total = carga_horaria dessa disciplina
-            - Se equivalência for agrupada:
-            ch_historico_total = soma(carga_horaria) das disciplinas equivalentes selecionadas
-
-            porcentagem_aproveitamento = (ch_historico_total / ch_nova) * 100
-            - arredonde para 1 casa decimal
-            - Se ch_nova <= 0:
-            porcentagem_aproveitamento = 0
-            observacao = "CH da nova disciplina ausente/zero; dispensa baseada em equivalência por nome e situação."
-
-            CRITÉRIO DE DISPENSA
-            Defina possivel_dispensa = true quando:
-            - existir equivalência (simples ou agrupada) após validação de situação
-
-            Observação obrigatória sobre carga horária:
-            - Se ch_historico_total >= ch_nova: "Equivalente por nome; CH compatível."
-            - Se ch_historico_total < ch_nova: "Equivalente por nome; CH inferior (historico=XXh < nova=YYh)."
-            - Se A3 ocorreu (nova numeral maior do que o máximo do histórico): inclua também:
-            "Nova=NUM; histórico cobre até NUM_MAX."
-
-            REGRA PARA PREENCHIMENTO DO CAMPO "nome_registro"
-            Em cada item retornado em "comparacao_disciplinas", preencha "nome_registro" seguindo estas regras:
-
-            1) Definição do "nome_registro"
-            - "nome_registro" deve representar, de forma resumida e informativa, o(s) nome(s) das disciplina(s) do histórico efetivamente utilizadas como equivalência.
-
-            2) Caso a NOVA disciplina contenha numeração (tem numeral) e a comparação NÃO foi feita por numeração (ou seja, não houve match exato do MESMO numeral; ocorreu uso de genérica sem numeral ou agrupamento por outros numerais):
-            - "nome_registro" deve agrupar as numerações efetivamente utilizadas do histórico.
-            - Formato sugerido:
-            "<base_name com ortografia corrigida> <lista_de_numerais_utilizados>"
-            Ex.: "Direito Penal I, II e III"
-            - Regras de formatação:
-            - Se houver 1 numeral: "I"
-            - Se houver 2 numerais: "I e II"
-            - Se houver 3+ numerais: "I, II e III" (usar vírgulas e "e" antes do último)
-            - Se houver mistura de romanos e arábicos, preserve como aparece nos nomes originais (preferir romanos se a maioria estiver em romanos).
-            - Se as disciplinas usadas incluírem uma versão sem numeral (genérica), use apenas o nome sem numeral (ex.: "Direito Penal") e NÃO liste numerais.
-
-            3) Caso contrário (comparação feita por numeração ou não houve agrupamento):
-            - "nome_registro" deve ser apenas o nome da disciplina utilizada (do histórico) com ortografia corrigida.
-            Ex.: se foi match exato "Direito Penal II" -> nome_registro = "Direito Penal II"
-            Ex.: se usou a genérica "Direito Penal" -> nome_registro = "Direito Penal"
-
-            4) Caso as disciplinas utilizadas tenham NOMES DIFERENTES (não compartilham exatamente o mesmo base_name após normalização), mesmo que tenham sido agrupadas:
-            - "nome_registro" deve concatenar os nomes distintos usando o separador:
-            " Nome 1 " & " Nome 2 "
-            - Se forem 3 ou mais nomes diferentes:
-                "Nome 1" & "Nome 2" & "Nome 3"
-            - Em todos os casos, use os nomes com ortografia corrigida.
-            - Se algum desses nomes diferentes também tiver numeração a ser agrupada (regra 2), aplique a regra 2 dentro de cada bloco antes de concatenar.
-                Ex.: "Práticas Extensionistas I, II e III" & "Atividades Extensionistas"
-
-            5) Origem do "nome_registro"
-            - Sempre derive o "nome_registro" a partir das disciplinas em "disciplinas_cursadas_equivalentes" que realmente foram selecionadas (após validação de situação).
-            - Nunca invente numerais ou nomes que não estejam presentes nas disciplinas selecionadas.
-
-            6) Origem do "ano" e "semestre"
-            - Sempre extrair as informações do "periodo", nele sempre estará as informações de ano e semestre
-            - As informações estarão:
-                Ex: (ano)-(semestre)
-                OU  (ano)(letra)-(semestre)
-                OU  (ano)/(semestre)
-                OU  (ano)(letra)-(semestre)
-                
-            - O ano sempre vem na esquerda e o semestre após o hifen.
-
-            SAÍDA (OBRIGATÓRIA)
-            Retorne EXCLUSIVAMENTE um JSON válido, sem texto fora do JSON.
-            IMPORTANTE: incluir APENAS itens com possivel_dispensa = true.
-
-            ESTRUTURA (SEMPRE LISTA NO HISTÓRICO)
-            Use sempre "disciplinas_cursadas_equivalentes" como LISTA (mesmo que tenha 1 item).
-
-            {
-            "comparacao_disciplinas": [
-                {
-                "nova_disciplina": {
-                    "codigo": "",
-                    "nome": "",
-                    "carga_horaria": 0
-                },
-                "disciplinas_cursadas_equivalentes": [
-                    {
-                    "codigo": "",
-                    "periodo": "",
-                    "ano": "",
-                    "semestre": "",
-                    "nome": "",
-                    "carga_horaria": 0,
-                    "creditos": 0,
-                    "nota": "",
-                    "situacao": ""
-                    }
-                ],
-                "porcentagem_aproveitamento": 0,
-                "possivel_dispensa": true,
-                "observacao": "",
-                "nome_registro": ""
-                }
-            ]
-            }
-
-            ORIENTAÇÕES FINAIS (DESEMPENHO)
-            - Não explique etapas, não use markdown, não inclua texto fora do JSON.
-            - Eficiência:
-            1) crie índices do histórico por base_name e por numeral
-            2) para cada nova disciplina, aplique as regras CASO A/B na ordem definida
-            - Retorne apenas disciplinas dispensadas no JSON final, com ortografia corrigida no campo "nome".
-
-
-            """
-  
-    def send_for_docling(self, docling_doc=None, historico_interno=None, grade=None):
-
-        conteudo = (
-            self.prompt
-            + "\n\nJSON DE DISCIPLINAS NOVAS (GRADE):\n"
-            + json.dumps(grade, ensure_ascii=False, indent=2)
-        )
-
-        if historico_interno:
-            conteudo += (
-                "\n\nHISTÓRICO INTERNO (BASE PRIMÁRIA — PRIORIDADE MÁXIMA):\n"
-                "Use este histórico como referência principal. "
-                "Ele pode estar incompleto.\n"
-                + json.dumps(historico_interno, ensure_ascii=False, indent=2)
-            )
-
-        if isinstance(docling_doc, list):
-            conteudo += (
-                "\n\nDOCUMENTOS EXTERNOS (COMPLEMENTARES AO HISTÓRICO):\n"
-                "Estes documentos podem conter disciplinas adicionais "
-                "ou informações ausentes no histórico interno.\n"
-            )
+        # Lista de extracoes ZIP: cada item tem chaves 'arquivo' e 'conteudo'
+        if isinstance(docling_doc, list) and docling_doc and "arquivo" in docling_doc[0]:
             for i, doc in enumerate(docling_doc, 1):
-                conteudo += (
-                    f"\n--- DOCUMENTO {i}: {doc['arquivo']} ---\n"
-                    + json.dumps(doc['conteudo'], ensure_ascii=False, indent=2)
+                partes.append(
+                    f"\n\nDOC {i} ({doc['arquivo']}):\n"
+                    + json.dumps(doc["conteudo"], ensure_ascii=False)
                 )
-
-        elif docling_doc:
-            conteudo += (
-                "\n\nDOCUMENTO EXTERNO (COMPLEMENTAR AO HISTÓRICO):\n"
-                + json.dumps(docling_doc, ensure_ascii=False, indent=2)
+        else:
+            partes.append(
+                "\n\nHISTORICO EXTRAIDO:\n"
+                + json.dumps(docling_doc, ensure_ascii=False)
             )
 
+        logger.info("Enviando comparacao para o modelo %s", MODELO)
         response = self.client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[conteudo]
+            model=MODELO,
+            contents=["".join(partes)],
+            config=GEN_CONFIG,
         )
 
-        return self._safe_json_load(response.text)
-    
-    def lerDocumento(self, url, tipo):
-        promptJson = '''
-            Você é um sistema especializado em leitura (OCR), interpretação e estruturação de históricos escolares de instituições de ensino superior brasileiras. Você receberá um documento em PDF ou imagem (escaneado ou digital). Sua tarefa é extrair as informações relevantes do histórico e retornar EXCLUSIVAMENTE um JSON válido no esquema definido abaixo.
+        return safe_json_load(response.text)
 
-            ENTRADA
-            - Um histórico escolar (PDF ou imagem).
-            - O documento pode conter ruídos de digitalização, carimbos, assinaturas, tabelas, abreviações, variações de layout e múltiplas páginas.
-            - Caso você identifique que o documento é uma grade escolar ou um programa de disciplinas, pode retornar um array vazio.
-
-            OBJETIVO
-            1) Ler o documento (aplicar OCR quando necessário).
-            2) Identificar e extrair todos os dados acadêmicos essenciais:
-            - Dados do aluno
-            - Dados do curso e instituição
-            - Dados de matrícula/ingresso
-            - Todas as disciplinas listadas no histórico (cursadas/dispensadas/equivalência/reprovadas/cursando)
-            - Totais e indicadores (quando existirem no documento), como carga horária total, créditos totais, CR/IRA, situação acadêmica, data de emissão.
-            3) Estruturar a saída no JSON abaixo, mantendo consistência de tipos e preenchendo valores ausentes com "" ou 0 ou null conforme indicado.
-
-            REGRAS IMPORTANTES
-            - NÃO invente informações. Extraia apenas o que estiver no documento.
-            - Seja tolerante a variações e erros de OCR (acentos, letras trocadas, separadores).
-            - Ao detectar valores numéricos:
-            - Carga horária/Créditos: use número inteiro (ex.: 60).
-            - Notas: mantenha como string exatamente como aparece (ex.: "8,5", "7.0", "MB", "A", "AP").
-            - Padronize a “situação” da disciplina quando possível para um destes valores:
-            "APROVADO", "REPROVADO", "CURSANDO", "TRANCADO", "DISPENSADO", "EQUIVALENCIA", "CANCELADO", "INDEFINIDO"
-            - Se o documento usar siglas (AP, RP etc.), converta para a forma padronizada.
-            - Se não der para inferir, use "INDEFINIDO".
-            - Se um campo não for encontrado:
-            - Textos: "" (string vazia)
-            - Números inteiros: 0
-            - Campos opcionais gerais (ex.: CNPJ, campus): null quando fizer sentido
-            - Não inclua explicações, comentários ou markdown fora do JSON.
-            - Mantenha a ordem das disciplinas conforme o histórico (por período/semestre) se essa ordem existir.
-            - A nota de sair no padrão: 0.00 (necessáriamente)
-
-            DICAS DE EXTRAÇÃO (SEM SAÍDA DE TEXTO)
-            - Procure por cabeçalhos como: “Aluno”, “Matrícula/RA”, “Curso”, “Período de ingresso”, “Histórico Escolar”, “Componentes Curriculares”, “Disciplinas”.
-            - A tabela de disciplinas normalmente contém colunas como: período/semestre, código, disciplina, CH, créditos, nota/média, situação.
-            - Se existirem totais (CR/IRA, CH total, créditos totais, integralização), capture nos campos correspondentes.
-
-            FORMATO DE SAÍDA (OBRIGATÓRIO)
-            Retorne EXCLUSIVAMENTE este JSON (sem nenhum texto antes/depois):
-
-            {
-            "documento": {
-                "tipo": "HISTORICO_ESCOLAR",
-                "instituicao": {
-                "nome": "",
-                "campus": "",
-                "cidade": "",
-                "uf": "",
-                "cnpj": null
-                },
-                "emissao": {
-                "data": "",
-                "numero_documento": "",
-                "validacao_autenticidade": ""
-                }
-            },
-            "aluno": {
-                "nome": "",
-                "matricula": "",
-                "cpf": "",
-                "rg": "",
-                "data_nascimento": ""
-            },
-            "curso": {
-                "nome": "",
-                "nivel": "",
-                "modalidade": "",
-                "turno": "",
-                "matriz_curricular": "",
-                "periodo_ingresso": "",
-                "forma_ingresso": ""
-            },
-            "situacao_academica": {
-                "status": "",
-                "periodo_atual": "",
-                "data_situacao": ""
-            },
-            "indicadores": {
-                "cr_ira": "",
-                "creditos_obtidos": 0,
-                "creditos_totais": 0,
-                "carga_horaria_cumprida": 0,
-                "carga_horaria_total": 0,
-                "percentual_integralizacao": ""
-            },
-            "disciplinas": {
-                "nome_disciplina": {
-                    "periodo": "",
-                    "codigo": "",
-                    "carga_horaria": 0,
-                    "creditos": 0,
-                    "nota": "",
-                    "frequencia": "",
-                    "situacao": "",
-                    "observacoes": ""
-                }
-            },
-            "observacoes_gerais": ""
-            }
-
-            VALIDAÇÕES FINAIS (ANTES DE RESPONDER)
-            - O JSON deve ser válido (aspas, vírgulas, colchetes).
-            - “disciplinas” deve conter TODAS as disciplinas encontradas no histórico (apenas aprovadas e dispensadas).
-            - Se o documento tiver mais de uma página, combine as informações corretamente (evite duplicar linhas iguais).
-            - Não retorne texto fora do JSON.
-
-        '''
+    def ler_documento(self, url: str, tipo: str) -> Dict[str, Any]:
         try:
-            if url.startswith("http"):
-                doc_data = httpx.get(url, timeout=60).content
-            else:
-                with open(url, "rb") as f:
-                    doc_data = f.read()
+            doc_data = baixar_arquivo(url)
 
+            logger.info("Extraindo documento: %s (%s)", url, tipo)
             response = self.client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=MODELO,
                 contents=[
-                    types.Part.from_bytes(
-                        data=doc_data,
-                        mime_type=tipo,
-                    ),
-                    promptJson
-                ]
+                    types.Part.from_bytes(data=doc_data, mime_type=tipo),
+                    PROMPT_EXTRACAO,
+                ],
+                config=GEN_CONFIG,
             )
 
-            return self._safe_json_load(response.text)
+            return safe_json_load(response.text)
 
         except Exception as e:
+            logger.error("Erro ao ler documento %s: %s", url, e)
             return {"Erro": True, "Motivo": str(e)}
-        
-    def transformToJson(self, url, historico_interno: None, grade):
-        ext = url.lower().split(".")[-1]
-        if ext in ["jpg", "jpeg", "png", "tiff"]:
-            extracao = self.lerDocumento(url, 'image/jpeg')
-            return {"extracao": extracao, "historico_interno": historico_interno, "comparacao": self.send_for_docling(docling_doc=extracao, historico_interno=historico_interno, grade=grade)}
-        elif ext == "pdf":
-            extracao = self.lerDocumento(url, 'application/pdf')
-            return {"extracao": extracao, "historico_interno": historico_interno, "comparacao": self.send_for_docling(docling_doc=extracao, historico_interno=historico_interno, grade=grade)}
-        elif ext == "zip":
+
+    def transform_to_json(
+        self,
+        historico: Union[str, Dict[str, Any], List[Any]],
+        grade: Union[Dict[str, Any], List[Any]],
+    ) -> Dict[str, Any]:
+        # Se veio como string JSON, tenta parsear para dict/list
+        if isinstance(historico, str):
             try:
-                zip_bytes = httpx.get(url, timeout=60).content
-                arquivos = self.extrair_arquivos_zip(zip_bytes)
+                parsed = json.loads(historico)
+                if isinstance(parsed, (dict, list)):
+                    historico = parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
 
-                extracoes = []
+        # Historico interno (JSON) - pula extracao, vai direto para comparacao
+        if isinstance(historico, (dict, list)):
+            logger.info("Historico interno (JSON) recebido, pulando extracao")
+            comparacao = self.send_for_docling(docling_doc=historico, grade=grade)
+            return {"extracao": historico, "comparacao": comparacao}
 
-                for arquivo in arquivos:
-                    mime = (
-                        "application/pdf"
-                        if arquivo.suffix.lower() == ".pdf"
-                        else "image/jpeg"
-                    )
+        # Historico externo (URL de arquivo) - faz extracao + comparacao
+        url: str = historico
+        ext = "." + url.lower().rsplit(".", 1)[-1]
+        logger.info("Processando documento: %s (extensao: %s)", url, ext)
 
-                    resultado = self.lerDocumento(
-                        url=str(arquivo),
-                        tipo=mime
-                    )
+        if ext in MIME_TYPES:
+            extracao = self.ler_documento(url, MIME_TYPES[ext])
+            comparacao = self.send_for_docling(docling_doc=extracao, grade=grade)
+            return {"extracao": extracao, "comparacao": comparacao}
 
-                    extracoes.append({
-                        "arquivo": arquivo.name,
-                        "conteudo": resultado
-                    })
+        if ext == ".zip":
+            return self._processar_zip(url, grade)
 
-                return {
-                    "extracao": {
-                        "tipo": "ZIP_MULTIPLOS_DOCUMENTOS",
-                        "documentos": extracoes
-                    },
-                    "historico_interno": historico_interno,
-                    "comparacao": self.send_for_docling(
-                        docling_doc=extracoes,
-                        historico_interno=historico_interno,
-                        grade=grade
-                    )
-                }
+        return {"Erro": True, "Motivo": "Tipo de arquivo nao suportado"}
 
-            except Exception as e:
-                return {"Erro": True, "Motivo": f"Ao tentar extrair ZIP {str(e)}"}
+    # -- private helpers ----------------------------------------------------
 
+    def _processar_zip(
+        self,
+        url: str,
+        grade: Union[Dict[str, Any], List[Any]],
+    ) -> Dict[str, Any]:
+        try:
+            zip_bytes = baixar_arquivo(url)
+            arquivos = self._extrair_arquivos_zip(zip_bytes)
 
-            
-        else:
-            return {"Erro": True, "Motivo": "Tipo de arquivo não suportado"}
-        
-   
+            extracoes: List[Dict[str, Any]] = []
+            for arquivo in arquivos:
+                mime = MIME_TYPES.get(arquivo.suffix.lower(), "image/jpeg")
+                resultado = self.ler_documento(url=str(arquivo), tipo=mime)
+                extracoes.append({"arquivo": arquivo.name, "conteudo": resultado})
 
-    def extrair_arquivos_zip(self, conteudo_zip: bytes):
+            comparacao = self.send_for_docling(docling_doc=extracoes, grade=grade)
+            return {
+                "extracao": {"tipo": "ZIP_MULTIPLOS_DOCUMENTOS", "documentos": extracoes},
+                "comparacao": comparacao,
+            }
+        except Exception as e:
+            logger.error("Erro ao processar ZIP %s: %s", url, e)
+            return {"Erro": True, "Motivo": f"Ao tentar extrair ZIP: {e}"}
+
+    @staticmethod
+    def _extrair_arquivos_zip(conteudo_zip: bytes) -> List[Path]:
+        # NOTE: The temp directory is intentionally NOT cleaned up here because
+        # the returned file paths must remain valid for downstream processing
+        # (lerDocumento reads them from disk). The caller is responsible for
+        # cleanup, or the OS will reclaim the space on reboot.
         temp_dir = Path(tempfile.mkdtemp())
-
         zip_path = temp_dir / "arquivo.zip"
         zip_path.write_bytes(conteudo_zip)
 
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(temp_dir)
 
-        arquivos = []
-
-        for arquivo in temp_dir.rglob("*"):
-            if arquivo.is_file() and arquivo.suffix.lower() in [
-                ".pdf", ".jpg", ".jpeg", ".png", ".tiff"
-            ]:
-                arquivos.append(arquivo)
+        arquivos = sorted(
+            [f for f in temp_dir.rglob("*") if f.is_file() and f.suffix.lower() in EXTENSOES_SUPORTADAS],
+            key=lambda f: f.name.lower(),
+        )
 
         if not arquivos:
-            raise ValueError("ZIP não contém arquivos suportados")
-
-        # ordena para manter previsibilidade (ex: nome ou tamanho)
-        arquivos.sort(key=lambda f: f.name.lower())
+            raise ValueError("ZIP nao contem arquivos suportados")
 
         return arquivos
 
+    # -- backward-compatible camelCase aliases ------------------------------
+    lerDocumento = ler_documento
+    transformToJson = transform_to_json
 
 
-    def _safe_json_load(self, text: str):
-        if not text or not isinstance(text, str):
-            raise ValueError("Resposta vazia ou inválida da IA")
-
-        cleaned = text.strip()
-        cleaned = cleaned.replace("```json", "").replace("```", "").strip()
-
-        decoder = json.JSONDecoder()
-
-        # tenta decodificar a partir do primeiro { ou [
-        for start in range(len(cleaned)):
-            if cleaned[start] in "{[":
-                try:
-                    obj, idx = decoder.raw_decode(cleaned[start:])
-                    return obj
-                except json.JSONDecodeError:
-                    continue
-
-        raise ValueError(
-            "Resposta da IA não contém JSON válido.\n"
-            f"Conteúdo recebido:\n{cleaned[:1000]}"
-        )
-
+# Backward-compatible alias for the old class name
+Gemini = GeminiHistorico
