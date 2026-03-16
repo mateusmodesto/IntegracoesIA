@@ -59,7 +59,7 @@ PROMPT_VALIDACAO: str = """
             Aceitar:
             - rg, cpf, cnh, certidao_nascimento, certidao_casamento, comprovante_residencia
             - certificado_reservista, titulo_eleitor
-            - conclusao_historico (**Apenas** Ensino M\u00e9dio)
+            - conclusao_historico (**EXCLUSIVAMENTE** Ensino Médio - REJEITAR Ensino Fundamental e Ensino Superior)
 
             origem_entrega = "escola":
             Aceitar:
@@ -311,23 +311,26 @@ PROMPTS_EXTRACAO: Dict[str, str] = {
                 }
                 }
 
-                Regras:
-                - Ensino superior implica automaticamente conclus\u00e3o do Ensino M\u00e9dio.
-                - Termos como "2\u00ba grau" indicam Ensino M\u00e9dio.
-                - Se a origem for "escola", aceitar apenas Ensino Fundamental.
-                - Se a origem for "graduacao", aceitar apenas Ensino M\u00e9dio.
-                - Se a origem for "pos_graduacao", aceitar apenas Ensino Superior.
+                Regras RIGOROSAS DE VALIDA\u00c7\u00c3O POR ORIGEM:
+                - Se a origem for "escola": REJEITAR se n\u00edvel_ensino != "ensino_fundamental"
+                - Se a origem for "graduacao": REJEITAR se n\u00edvel_ensino != "ensino_medio" (n\u00e3o aceitar Fundamental nem Superior)
+                - Se a origem for "pos_graduacao": REJEITAR se n\u00edvel_ensino != "ensino_superior"
+                
+                Identifica\u00e7\u00e3o de n\u00edveis:
+                - "Ensino Superior", "Gradua\u00e7\u00e3o", "Faculdade", "Universidade", "3\u00ba grau" \u2192 ensino_superior
+                - "Ensino M\u00e9dio", "2\u00ba grau", "colegial" \u2192 ensino_medio
+                - "Ensino Fundamental", "1\u00ba grau" \u2192 ensino_fundamental
 
                 Obrigat\u00f3rios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
             """,
 
     "certificado_conclusao_ensino_medio": """
-                Extraia os dados deste documento de Conclus\u00e3o / Hist\u00f3rico Escolar.
+                Extraia os dados deste documento de Conclus\u00e3o / Hist\u00f3rico Escolar (Ensino M\u00e9dio).
 
                 fields:
                 {
                 "nome_pessoa": string | null,
-                "nivel_ensino": "ensino_fundamental" | "ensino_medio" | "ensino_superior" | null,
+                "nivel_ensino": "ensino_medio" | null,
                 "historico": {
                     "instituicao_ensino": string | null,
                     "disciplinas": [] | null
@@ -339,22 +342,20 @@ PROMPTS_EXTRACAO: Dict[str, str] = {
                 }
 
                 Regras:
-                - Ensino superior implica automaticamente conclus\u00e3o do Ensino M\u00e9dio.
-                - Termos como "2\u00ba grau" indicam Ensino M\u00e9dio.
-                - Se a origem for "escola", aceitar apenas Ensino Fundamental.
-                - Se a origem for "graduacao", aceitar apenas Ensino M\u00e9dio.
-                - Se a origem for "pos_graduacao", aceitar apenas Ensino Superior.
+                - Este \u00e9 SEMPRE Ensino M\u00e9dio. Marcar nivel_ensino = "ensino_medio".
+                - Se a origem for "graduacao", aceitar (Ensino M\u00e9dio \u00e9 exigido).
+                - Rejeitar para outras origens.
 
                 Obrigat\u00f3rios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
             """,
 
     "historico_escolar_fundamental": """
-                Extraia os dados deste documento de Conclus\u00e3o / Hist\u00f3rico Escolar.
+                Extraia os dados deste documento de Conclus\u00e3o / Hist\u00f3rico Escolar (Ensino Fundamental).
 
                 fields:
                 {
                 "nome_pessoa": string | null,
-                "nivel_ensino": "ensino_fundamental" | "ensino_medio" | "ensino_superior" | null,
+                "nivel_ensino": "ensino_fundamental" | null,
                 "historico": {
                     "instituicao_ensino": string | null,
                     "disciplinas": [] | null
@@ -366,17 +367,15 @@ PROMPTS_EXTRACAO: Dict[str, str] = {
                 }
 
                 Regras:
-                - Ensino superior implica automaticamente conclus\u00e3o do Ensino M\u00e9dio.
-                - Termos como "2\u00ba grau" indicam Ensino M\u00e9dio.
-                - Se a origem for "escola", aceitar apenas Ensino Fundamental.
-                - Se a origem for "graduacao", aceitar apenas Ensino M\u00e9dio.
-                - Se a origem for "pos_graduacao", aceitar apenas Ensino Superior.
+                - Este \u00e9 SEMPRE Ensino Fundamental. Marcar nivel_ensino = "ensino_fundamental".
+                - Se a origem for "escola", aceitar (Ensino Fundamental \u00e9 exigido).
+                - Rejeitar para outras origens.
 
                 Obrigat\u00f3rios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
             """,
 
     "certificado_diploma_graduacao": """
-                Extraia os dados deste Certificado ou Diploma de Gradua\u00e7\u00e3o.
+                Extraia os dados deste Certificado ou Diploma de Graduação (Ensino Superior).
                 fields:
                 {
                 "nome_pessoa": string | null,
@@ -391,8 +390,11 @@ PROMPTS_EXTRACAO: Dict[str, str] = {
                 }
                 }
                 Regras:
-                - Se a origem for "pos_graduacao", aceitar apenas Ensino Superior.
-                Obrigat\u00f3rios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
+                - Este é SEMPRE Ensino Superior. Marcar nivel_ensino = "ensino_superior".
+                - Se a origem for "pos_graduacao", aceitar (Ensino Superior é exigido).
+                - Rejeitar para outras origens.
+                
+                Obrigatórios: nome_pessoa, conclusao.ano_conclusao, conclusao.instituicao_ensino
             """,
 
     "declaracao_transferencia": """
