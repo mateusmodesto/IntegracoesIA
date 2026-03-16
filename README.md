@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # IADocs - Sistema de Processamento de Documentos com IA
+=======
+# Sistema de Processamento de Documentos com IA
+>>>>>>> 0f1bc181d994c3bd419f32e4cf2063ee52b828ca
 
 API Flask para processamento inteligente de documentos educacionais usando Google Gemini.
 Atende a instituicao Escolas Padre Anchieta, integrando com o sistema academico Lyceum.
