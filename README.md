@@ -65,7 +65,7 @@ DB_NAME=dtb_lyceum_prod
 DB_USER=lyceum
 DB_PASSWORD=lyceum
 AWS_API_KEY=...
-FLASK_PORT=5010
+FLASK_PORT= ...
 ```
 
 O modulo `shared/config.py` carrega essas variaveis via `python-dotenv` e exporta constantes usadas por todos os modulos.
