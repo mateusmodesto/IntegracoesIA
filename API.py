@@ -6,6 +6,7 @@ Endpoints:
     POST /PROUNI            - Validacao de documentos PROUNI
     POST /analiseHistorico  - Analise de historico escolar (async)
     POST /documentos/gerar  - Geracao de documentos juridicos
+    POST /gerar-pdf         - Geracao de PDF a partir de HTML
     POST /sistema_compras/comparar  - Comparacao de planilhas
     GET  /sistema_compras/download  - Download do resultado
 """
@@ -259,6 +260,54 @@ def gerar_documento():
     except Exception as e:
         logger.error(f"Erro interno em /documentos/gerar: {e}", exc_info=True)
         return _err("Erro interno na geracao do documento", 500, {"detail": str(e)})
+
+
+# ── Gerador de PDF ────────────────────────────────────────────────────────
+
+@app.route("/gerar-pdf", methods=["POST"])
+def gerar_pdf():
+    """Gera PDF a partir de HTML e envia para webhook N8N."""
+    from GerarEbook.gerar_pdf import _gerar_pdf_sync, WEBHOOK_SALVAR
+
+    try:
+        data = _parse_json_body()
+        if data is None:
+            return _err("JSON invalido ou ausente", 400)
+
+        # Aceita array (formato N8N) ou objeto direto
+        if isinstance(data, list):
+            data = data[0]
+
+        html_content = data.get("html")
+        if not html_content:
+            return _err("Campo 'html' e obrigatorio", 400)
+
+        logger.info(f"Recebido HTML ({len(html_content)} chars). Gerando PDF...")
+
+        pdf_bytes = _gerar_pdf_sync(html_content)
+
+        logger.info(f"PDF gerado: {len(pdf_bytes) / 1024:.1f} KB")
+
+        # Envia o PDF para o webhook
+        import httpx
+        with httpx.Client(timeout=120) as client:
+            resp = client.post(
+                WEBHOOK_SALVAR,
+                files={"file": ("ebook.pdf", pdf_bytes, "application/pdf")},
+            )
+
+        logger.info(f"Webhook status: {resp.status_code}")
+
+        return jsonify({
+            "sucesso": True,
+            "pdf_tamanho_kb": round(len(pdf_bytes) / 1024, 1),
+            "webhook_status": resp.status_code,
+            "webhook_resposta": resp.text[:500],
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Erro interno em /gerar-pdf: {e}", exc_info=True)
+        return _err("Erro interno", 500, {"detail": str(e)})
 
 
 # ── Comparador de Planilhas ───────────────────────────────────────────────

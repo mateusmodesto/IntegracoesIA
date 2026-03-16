@@ -1,4 +1,4 @@
-# FlaskPyIA - Sistema de Processamento de Documentos com IA
+# IADocs - Sistema de Processamento de Documentos com IA
 
 API Flask para processamento inteligente de documentos educacionais usando Google Gemini.
 Atende a instituicao Escolas Padre Anchieta, integrando com o sistema academico Lyceum.
@@ -8,7 +8,7 @@ Atende a instituicao Escolas Padre Anchieta, integrando com o sistema academico 
 ## Estrutura do Projeto
 
 ```
-FlaskPyIA/
+IADocs/
 ├── .env                            # Variaveis de ambiente (NAO commitar)
 ├── .gitignore
 ├── API.py                          # Servidor Flask principal

@@ -18,3 +18,4 @@ python-dotenv
 python-docx
 openpyxl
 pandas
+playwright
