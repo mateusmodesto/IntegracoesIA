@@ -1,4 +1,4 @@
-# FlaskPyIA - Sistema de Processamento de Documentos com IA
+# Sistema de Processamento de Documentos com IA
 
 API Flask para processamento inteligente de documentos educacionais usando Google Gemini.
 Atende a instituicao Escolas Padre Anchieta, integrando com o sistema academico Lyceum.
