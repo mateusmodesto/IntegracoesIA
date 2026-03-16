@@ -7,11 +7,11 @@ load_dotenv()
 
 # ── Database ─────────────────────────────────────────────────────────────
 DATABASE_CONFIG = {
-    'host': os.getenv('DB_HOST', '192.168.0.9'),
-    'port': int(os.getenv('DB_PORT', '1433')),
-    'database': os.getenv('DB_NAME', 'dtb_lyceum_prod'),
-    'user': os.getenv('DB_USER', 'lyceum'),
-    'password': os.getenv('DB_PASSWORD', 'lyceum'),
+    'host': os.getenv('DB_HOST'),
+    'port': int(os.getenv('DB_PORT')),
+    'database': os.getenv('DB_NAME'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
 }
 
 # ── Gemini API ───────────────────────────────────────────────────────────
