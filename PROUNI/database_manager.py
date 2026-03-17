@@ -9,9 +9,6 @@ import json
 from typing import Dict, Any, Optional, Union
 
 from shared.database import BaseDatabaseManager
-from shared.config import get_logger
-
-logger = get_logger(__name__)
 
 
 class DatabaseManager(BaseDatabaseManager):
@@ -66,7 +63,7 @@ class DatabaseManager(BaseDatabaseManager):
             relacao = self.verifica_relacao(dados)
 
             if relacao is None:
-                logger.warning(f"Nenhuma relacao encontrada para pessoa={dados.get('pessoa')}")
+                pass
             else:
                 update_entregue = self._inserir_doc_entregue(relacao, dados["tipo_documento"])
 

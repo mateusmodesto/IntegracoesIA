@@ -11,10 +11,7 @@ from datetime import datetime
 
 from .database_manager import DatabaseManager
 from shared.utils import Utils
-from shared.config import get_logger
 from .api_client import ViaCEPClient
-
-logger = get_logger(__name__)
 
 
 class BaseMigration(ABC):

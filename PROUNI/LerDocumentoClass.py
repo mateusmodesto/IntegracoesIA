@@ -16,10 +16,8 @@ import requests
 from google import genai
 from google.genai import types
 
-from shared.config import GEMINI_API_KEY_PROUNI, get_logger
+from shared.config import GEMINI_API_KEY_PROUNI
 from shared.gemini_helpers import safe_json_load, baixar_arquivo
-
-logger = get_logger(__name__)
 
 # ── Modelos Gemini ────────────────────────────────────────────────────────
 MODELO_VALIDACAO = "gemini-2.5-flash-lite"
@@ -188,7 +186,6 @@ class GeminiProuni:
         try:
             doc_bytes = baixar_arquivo(url)
         except Exception as e:
-            logger.error(f"Falha ao baixar documento: {e}")
             return {"Erro": True, "Motivo": f"Falha ao baixar arquivo: {e}"}
 
         # Etapa 1: Validacao
@@ -233,7 +230,6 @@ class GeminiProuni:
             retorno = self._processar_documento(pdf_path, tipo_doc, "application/pdf")
 
         except Exception as e:
-            logger.error(f"Erro ao converter DOCX: {e}")
             retorno = {"Erro": True, "Motivo": str(e)}
 
         finally:
@@ -263,7 +259,6 @@ class GeminiProuni:
             )
             return safe_json_load(response.text)
         except Exception as e:
-            logger.error(f"Erro na validacao Gemini: {e}")
             return {"Erro": True, "Motivo": str(e)}
 
     # ── Etapa 2: Extracao ─────────────────────────────────────────────────
@@ -283,7 +278,6 @@ class GeminiProuni:
             )
             return safe_json_load(response.text)
         except Exception as e:
-            logger.error(f"Erro na extracao Gemini: {e}")
             return {"Erro": True, "Motivo": str(e)}
 
 

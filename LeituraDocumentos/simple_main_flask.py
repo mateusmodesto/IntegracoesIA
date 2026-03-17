@@ -6,7 +6,6 @@ Método main que busca documentos no banco, processa via API e atualiza dados
 """
 
 from typing import Dict, Any
-from shared.config import get_logger
 from .LerDocumentoClass import Gemini
 from .database_manager import DatabaseManager
 from .migration_classes import (
@@ -25,8 +24,6 @@ from .migration_classes import (
     HistoricoFundamentalMigration,
     DeclaracaoTransferenciaMigration
 )
-
-logger = get_logger(__name__)
 
 # Mapeamento de posicao/curso para coluna no banco de dados
 MAPA_DOCUMENTOS = {
@@ -533,16 +530,13 @@ class DocumentProcessorWeb:
             migration_class = self.migration_classes.get(tipo_doc)
 
             if not migration_class:
-                logger.info(f"Tipo de documento não suportado para migração: {tipo_doc}")
                 return False
 
             migration = migration_class(self.db_manager)
             rows_affected = migration.migrate(data, aluno)
-            logger.info(f"Migração executada para {tipo_doc} - {rows_affected} linhas afetadas")
             return True
 
         except Exception as e:
-            logger.error(f"Erro na migração para {tipo_doc}: {str(e)}")
             return 0
 
     def confirm_visto_confere(self, aluno):

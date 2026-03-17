@@ -27,9 +27,13 @@ FLASK_PORT = int(os.getenv('FLASK_PORT', '5010'))
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
-    format='[%(asctime)s] %(name)s %(levelname)s: %(message)s',
+    format='[%(asctime)s] %(levelname)s %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
+# Silencia bibliotecas terceiras ruidosas
+for _lib in ('werkzeug', 'httpx', 'httpcore', 'urllib3', 'googleapiclient'):
+    logging.getLogger(_lib).setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:

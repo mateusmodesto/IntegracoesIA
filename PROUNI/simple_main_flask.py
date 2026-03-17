@@ -9,9 +9,6 @@ from typing import Dict, Any
 
 from .LerDocumentoClass import Gemini
 from .database_manager import DatabaseManager
-from shared.config import get_logger
-
-logger = get_logger(__name__)
 
 
 class DocumentProcessorWeb:
@@ -64,10 +61,8 @@ class DocumentProcessorWeb:
             )
 
             if is_timeout:
-                logger.warning(f"Timeout ao processar documento: {tipo_doc}")
                 return {"status": "timeout", "retry_needed": True}
 
-            logger.error(f"Erro ao processar documento {tipo_doc}: {e}")
             return {
                 "status": "error",
                 "message": str(e),
@@ -93,5 +88,4 @@ def main(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         return processor.process_document(payload)
     except Exception as e:
-        logger.error(f"Erro fatal no processamento PROUNI: {e}")
         return {"status": "error", "mensagem": str(e)}

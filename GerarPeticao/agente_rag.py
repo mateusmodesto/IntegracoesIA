@@ -23,9 +23,6 @@ if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
 
 from shared.config import DATABASE_CONFIG as DB_CONFIG
-from shared.config import get_logger
-
-logger = get_logger(__name__)
 
 
 class AgenteJuridico:
@@ -366,7 +363,6 @@ class AgenteJuridico:
                 output_path = "documento_GERADO.docx"
 
             total = self.substituir_variaveis(template_path, dados_completos, output_path)
-            logger.info(f"[GerarPeticao] {total} substituicoes realizadas")
 
             # 5. Inserir elementos restantes (textos e tabelas) das subcategorias
             if subcategorias_elementos:

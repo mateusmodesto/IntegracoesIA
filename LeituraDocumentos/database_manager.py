@@ -9,9 +9,6 @@ import json
 from typing import Dict, Any, List, Optional
 
 from shared.database import BaseDatabaseManager
-from shared.config import get_logger
-
-logger = get_logger(__name__)
 
 
 class DatabaseManager(BaseDatabaseManager):
@@ -178,7 +175,6 @@ class DatabaseManager(BaseDatabaseManager):
         coluna_nova = coluna_map.get(tipo_doc)
 
         if not coluna_nova or tipo_doc is None or tipo_doc.upper() == "OUTROS":
-            logger.info(f"Documento do aluno {aluno} classificado como OUTROS - nao sera gravado.")
             return
 
         query_update = f"""

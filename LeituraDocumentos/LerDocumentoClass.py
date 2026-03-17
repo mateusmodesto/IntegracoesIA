@@ -6,13 +6,8 @@ from typing import Any, Dict, Optional
 from google import genai
 from google.genai import types
 
-from shared.config import GEMINI_API_KEY_PRIMARY, get_logger
+from shared.config import GEMINI_API_KEY_PRIMARY
 from shared.gemini_helpers import safe_json_load, baixar_arquivo
-
-# ---------------------------------------------------------------------------
-# Logger
-# ---------------------------------------------------------------------------
-logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constantes de modelo
@@ -455,13 +450,11 @@ class GeminiDocumentos:
 
         mime_type = MIME_TYPES.get(ext)
         if mime_type is None:
-            logger.warning("Extens\u00e3o n\u00e3o suportada: %s", ext)
             return {"Erro": True, "Motivo": "Tipo de arquivo n\u00e3o suportado"}
 
         try:
             doc_bytes = baixar_arquivo(url)
         except Exception as e:
-            logger.error("Falha ao baixar arquivo %s: %s", url, e)
             return {"Erro": True, "Motivo": str(e)}
 
         return self._processar_duas_etapas(doc_bytes, mime_type, origem, tipo_doc)
@@ -496,13 +489,7 @@ class GeminiDocumentos:
                 ],
             )
             retorno["validacao"] = safe_json_load(response_val.text)
-            logger.info(
-                "Valida\u00e7\u00e3o conclu\u00edda: tipo=%s, valido=%s",
-                retorno["validacao"].get("document_type"),
-                retorno["validacao"].get("is_valid"),
-            )
         except Exception as e:
-            logger.error("Erro na etapa de valida\u00e7\u00e3o: %s", e)
             return {"Erro": True, "Motivo": str(e)}
 
         # Se inv\u00e1lido, retorna sem extrair
@@ -541,9 +528,7 @@ class GeminiDocumentos:
                 ],
             )
             retorno["extracao"] = safe_json_load(response_ext.text)
-            logger.info("Extra\u00e7\u00e3o conclu\u00edda para tipo=%s", doc_type)
         except Exception as e:
-            logger.error("Erro na etapa de extra\u00e7\u00e3o: %s", e)
             retorno["extracao"] = {"Erro": True, "Motivo": str(e)}
 
         return retorno
@@ -573,7 +558,6 @@ class GeminiDocumentos:
         try:
             docx_bytes = baixar_arquivo(url)
         except Exception as e:
-            logger.error("Falha ao baixar DOCX %s: %s", url, e)
             return {"Erro": True, "Motivo": str(e)}
 
         with open(docx_path, "wb") as f:
@@ -607,7 +591,6 @@ class GeminiDocumentos:
             )
 
         except Exception as e:
-            logger.error("Erro na convers\u00e3o DOCX->PDF: %s", e)
             result = {"Erro": True, "Motivo": str(e)}
 
         finally:

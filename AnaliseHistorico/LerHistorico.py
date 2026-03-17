@@ -7,10 +7,8 @@ from typing import Any, Dict, List, Optional, Union
 from google import genai
 from google.genai import types
 
-from shared.config import GEMINI_API_KEY_PRIMARY, get_logger
+from shared.config import GEMINI_API_KEY_PRIMARY
 from shared.gemini_helpers import safe_json_load, baixar_arquivo
-
-logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -174,7 +172,6 @@ class GeminiHistorico:
                 + json.dumps(docling_doc, ensure_ascii=False)
             )
 
-        logger.info("Enviando comparacao para o modelo %s", MODELO)
         response = self.client.models.generate_content(
             model=MODELO,
             contents=["".join(partes)],
@@ -187,7 +184,6 @@ class GeminiHistorico:
         try:
             doc_data = baixar_arquivo(url)
 
-            logger.info("Extraindo documento: %s (%s)", url, tipo)
             response = self.client.models.generate_content(
                 model=MODELO,
                 contents=[
@@ -200,7 +196,6 @@ class GeminiHistorico:
             return safe_json_load(response.text)
 
         except Exception as e:
-            logger.error("Erro ao ler documento %s: %s", url, e)
             return {"Erro": True, "Motivo": str(e)}
 
     def transform_to_json(
@@ -219,14 +214,12 @@ class GeminiHistorico:
 
         # Historico interno (JSON) - pula extracao, vai direto para comparacao
         if isinstance(historico, (dict, list)):
-            logger.info("Historico interno (JSON) recebido, pulando extracao")
             comparacao = self.send_for_docling(docling_doc=historico, grade=grade)
             return {"extracao": historico, "comparacao": comparacao}
 
         # Historico externo (URL de arquivo) - faz extracao + comparacao
         url: str = historico
         ext = "." + url.lower().rsplit(".", 1)[-1]
-        logger.info("Processando documento: %s (extensao: %s)", url, ext)
 
         if ext in MIME_TYPES:
             extracao = self.ler_documento(url, MIME_TYPES[ext])
@@ -261,7 +254,6 @@ class GeminiHistorico:
                 "comparacao": comparacao,
             }
         except Exception as e:
-            logger.error("Erro ao processar ZIP %s: %s", url, e)
             return {"Erro": True, "Motivo": f"Ao tentar extrair ZIP: {e}"}
 
     @staticmethod

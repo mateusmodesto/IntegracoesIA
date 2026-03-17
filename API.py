@@ -39,6 +39,14 @@ DOCS_OUTPUT_DIR = os.path.join(tempfile.gettempdir(), "docs_juridicos")
 os.makedirs(DOCS_OUTPUT_DIR, exist_ok=True)
 
 
+# ── Log centralizado de requisições ───────────────────────────────────────
+
+@app.after_request
+def _log_request(response):
+    logger.info(f"{request.method} {request.path} -> {response.status_code}")
+    return response
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def _parse_json_body() -> Optional[Dict[str, Any]]:
@@ -282,11 +290,7 @@ def gerar_pdf():
         if not html_content:
             return _err("Campo 'html' e obrigatorio", 400)
 
-        logger.info(f"Recebido HTML ({len(html_content)} chars). Gerando PDF...")
-
         pdf_bytes = _gerar_pdf_sync(html_content)
-
-        logger.info(f"PDF gerado: {len(pdf_bytes) / 1024:.1f} KB")
 
         # Envia o PDF para o webhook
         import httpx
@@ -295,8 +299,6 @@ def gerar_pdf():
                 WEBHOOK_SALVAR,
                 files={"file": ("ebook.pdf", pdf_bytes, "application/pdf")},
             )
-
-        logger.info(f"Webhook status: {resp.status_code}")
 
         return jsonify({
             "sucesso": True,

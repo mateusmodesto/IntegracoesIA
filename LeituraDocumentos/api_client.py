@@ -11,9 +11,7 @@ from typing import Dict, Any, Optional
 
 import requests
 
-from shared.config import AWS_API_KEY, get_logger
-
-logger = get_logger(__name__)
+from shared.config import AWS_API_KEY
 
 
 class APIClient:
@@ -71,8 +69,6 @@ class APIClient:
         
         for attempt in range(self.max_retries + 1):
             try:
-                logger.info(f"Tentativa {attempt + 1}/{self.max_retries + 1} para processar documento: {tipo_doc}")
-                
                 response = self.session.post(
                     api_url,
                     json=payload,
@@ -87,7 +83,6 @@ class APIClient:
                     
                     # Se for erro 504 (timeout) e ainda temos tentativas, tenta novamente
                     if response.status_code == 504 and attempt < self.max_retries:
-                        logger.error(f"Erro HTTP 504 (timeout) na tentativa {attempt + 1}. Aguardando {self.retry_delay}s antes de tentar novamente...")
                         time.sleep(self.retry_delay)
                         continue
                     
@@ -95,13 +90,11 @@ class APIClient:
                     raise Exception(f"Erro HTTP {response.status_code}: {error_message}")
                 
                 # Se chegou aqui, a requisição foi bem-sucedida
-                logger.info(f"Documento processado com sucesso na tentativa {attempt + 1}")
                 return response.json()
                 
             except requests.exceptions.Timeout as e:
                 last_exception = e
                 if attempt < self.max_retries:
-                    logger.error(f"Timeout na tentativa {attempt + 1}. Aguardando {self.retry_delay}s antes de tentar novamente...")
                     time.sleep(self.retry_delay)
                     continue
                 else:
@@ -110,7 +103,6 @@ class APIClient:
             except requests.exceptions.RequestException as e:
                 last_exception = e
                 if attempt < self.max_retries:
-                    logger.error(f"Erro de requisição na tentativa {attempt + 1}: {str(e)}. Aguardando {self.retry_delay}s antes de tentar novamente...")
                     time.sleep(self.retry_delay)
                     continue
                 else:

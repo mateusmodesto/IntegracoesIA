@@ -7,9 +7,6 @@ import json
 from typing import Dict, Any
 
 from shared.database import BaseDatabaseManager
-from shared.config import get_logger
-
-logger = get_logger(__name__)
 
 
 class DatabaseManager(BaseDatabaseManager):

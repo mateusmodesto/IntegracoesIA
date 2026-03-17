@@ -1,11 +1,9 @@
 from typing import Any
 
-from shared.config import DATABASE_CONFIG, get_logger
+from shared.config import DATABASE_CONFIG
 
 from . import LerHistorico as lerHistorico
 from . import database_manager as db_manager
-
-logger = get_logger(__name__)
 
 
 class AnaliseHistorico:
@@ -15,8 +13,6 @@ class AnaliseHistorico:
         self.payload = payload
 
     def processar_historico(self, grade: dict[str, Any]) -> dict[str, Any]:
-        logger.info("Iniciando processamento de historico para analise %s", self.payload.get("id_analise"))
-
         id_reg = self.db.inserir_analise_historico(
             self.payload['id_analise'],
             self.payload['usuario_id']
@@ -60,7 +56,6 @@ class AnaliseHistorico:
 
             execucao = self.db.salvar_analise_historico(busca_id, resultado, grade)
             if execucao.get("status") == "sucesso":
-                logger.info("Processamento concluido com sucesso para analise %s", self.payload.get("id_analise"))
                 return {
                     "status": "sucesso",
                     "mensagem": "Analise processada e salva com sucesso",
@@ -74,7 +69,6 @@ class AnaliseHistorico:
             return self._erro("Erro ao salvar analise no banco de dados", execucao)
 
         except Exception as e:
-            logger.error("Erro inesperado ao processar historico: %s", e, exc_info=True)
             self.db.anular_validacao(busca_id, f"Erro no processamento: {e}")
             return self._erro("Erro inesperado ao processar historico", str(e))
 
