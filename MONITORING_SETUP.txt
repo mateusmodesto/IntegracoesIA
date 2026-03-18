@@ -1,0 +1,121 @@
+====================================================================
+CONFIGURAÇÃO DO MONITORAMENTO - Firebase
+====================================================================
+
+DEPENDÊNCIAS INSTALADAS (já no requirements.txt):
+  - firebase-admin>=6.5.0
+  - psutil>=5.9.0
+
+--------------------------------------------------------------------
+PASSO 1 — Criar projeto e credenciais no Firebase
+--------------------------------------------------------------------
+
+1. Acesse https://console.firebase.google.com/
+2. Crie um novo projeto (ou use um existente)
+3. No menu lateral: "Configurações do projeto" → aba "Contas de serviço"
+4. Clique em "Gerar nova chave privada" → baixe o arquivo JSON
+5. Salve o JSON em local seguro FORA do repositório git
+   Sugestão: /etc/secrets/firebase-credentials.json
+              ou no mesmo diretório do docker-compose, montado como volume
+
+--------------------------------------------------------------------
+PASSO 2 — Ativar o Firestore
+--------------------------------------------------------------------
+
+1. No console Firebase: menu "Build" → "Firestore Database"
+2. Clique "Criar banco de dados"
+3. Escolha o modo (produção ou teste — recomendado: produção)
+4. Selecione a região mais próxima (ex: us-east1 ou southamerica-east1)
+
+--------------------------------------------------------------------
+PASSO 3 — Variáveis de ambiente no .env (ou no docker-compose)
+--------------------------------------------------------------------
+
+Adicione ao .env:
+
+  # Monitoramento Firebase
+  FIREBASE_CREDENTIALS_PATH=/caminho/para/firebase-credentials.json
+  FIREBASE_PROJECT_ID=seu-projeto-id
+  MONITORING_APP_NAME=flask_api          # nome que aparece no Firestore
+  MONITORING_HEARTBEAT_INTERVAL=30       # segundos (padrão: 30)
+  MONITORING_METRICS_INTERVAL=60         # segundos (padrão: 60)
+  MONITORING_STATS_INTERVAL=120          # segundos (padrão: 120)
+
+Se estiver usando docker-compose, monte o arquivo JSON como volume:
+
+  volumes:
+    - /host/path/firebase-credentials.json:/secrets/firebase-credentials.json:ro
+
+  environment:
+    - FIREBASE_CREDENTIALS_PATH=/secrets/firebase-credentials.json
+
+--------------------------------------------------------------------
+ESTRUTURA DOS DADOS NO FIRESTORE
+--------------------------------------------------------------------
+
+monitoring/
+  flask_api/                        ← MONITORING_APP_NAME
+    heartbeat          (documento)  ← atualizado a cada 30s
+      status: "running"
+      container_id: "abc123def456"
+      uptime_seconds: 3600
+      uptime_formatted: "1h 0m 0s"
+      timestamp: "2026-03-18T10:00:00Z"
+      _updated_at: <ServerTimestamp>
+
+    api_stats          (documento)  ← atualizado a cada 120s
+      total_requests: 1042
+      total_errors: 5
+      total_5xx: 1
+      endpoints:
+        /validar:   { count: 800, errors: 3, avg_ms: 1240 }
+        /PROUNI:    { count: 200, errors: 2, avg_ms: 980  }
+        /gerar-pdf: { count: 42,  errors: 0, avg_ms: 3200 }
+      snapshot_at: "2026-03-18T10:02:00Z"
+
+    system_metrics/    (subcoleção) ← novo doc a cada 60s
+      {auto_id}:
+        timestamp: "2026-03-18T10:01:00Z"
+        container_id: "abc123def456"
+        uptime_seconds: 120
+        cpu: { percent: 45.2, count: 4 }
+        memory: { total_mb: 2048, used_mb: 1200, percent: 58.6 }
+        disk:   { total_gb: 50.0, used_gb: 22.3, percent: 44.6 }
+        network: { bytes_sent_mb: 12.5, bytes_recv_mb: 45.8 }
+
+    api_events/        (subcoleção) ← novo doc a cada requisição
+      {auto_id}:
+        timestamp: "2026-03-18T10:00:05Z"
+        method: "POST"
+        endpoint: "/validar"
+        status_code: 200
+        duration_ms: 1235
+        is_error: false
+
+--------------------------------------------------------------------
+COMPORTAMENTO SE NÃO CONFIGURADO
+--------------------------------------------------------------------
+
+Se FIREBASE_CREDENTIALS_PATH não estiver no .env, o monitoramento
+simplesmente NÃO é iniciado. A aplicação Flask funciona normalmente
+sem nenhum erro. Um aviso é registrado nos logs:
+
+  WARNING [monitoring] FIREBASE_CREDENTIALS_PATH não configurado —
+  monitoramento desativado.
+
+--------------------------------------------------------------------
+REGRAS DE SEGURANÇA RECOMENDADAS NO FIRESTORE
+--------------------------------------------------------------------
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Apenas a service account (backend) pode escrever
+    match /monitoring/{document=**} {
+      allow read: if false;   // bloqueia leitura pública
+      allow write: if false;  // escrita apenas via Admin SDK (bypass)
+    }
+  }
+}
+
+====================================================================

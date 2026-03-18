@@ -19,3 +19,7 @@ python-docx
 openpyxl
 pandas
 playwright
+
+# Monitoramento
+psutil>=5.9.0
+firebase-admin>=6.5.0

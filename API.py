@@ -22,6 +22,7 @@ from flask import Flask, Response, request, jsonify, send_file
 from flask_cors import CORS
 
 from shared.config import get_logger, FLASK_PORT
+from monitoring import app_monitor, monitoring_service
 
 logger = get_logger(__name__)
 
@@ -38,13 +39,18 @@ CORS(app, resources={r"/*": {
 DOCS_OUTPUT_DIR = os.path.join(tempfile.gettempdir(), "docs_juridicos")
 os.makedirs(DOCS_OUTPUT_DIR, exist_ok=True)
 
+# ── Hooks de monitoramento ────────────────────────────────────────────────
+
+app.before_request(app_monitor.before_request_hook)
+monitoring_service.start()
+
 
 # ── Log centralizado de requisições ───────────────────────────────────────
 
 @app.after_request
 def _log_request(response):
     logger.info(f"{request.method} {request.path} -> {response.status_code}")
-    return response
+    return app_monitor.after_request_hook(response)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
